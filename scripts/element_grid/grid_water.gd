@@ -16,6 +16,12 @@ const PRESSURE_RATE := 64     # units/tick per square of opening
 const PRESSURE_MIN_DIFF := 2  # top-up hysteresis (head units; 256 = one cell)
 const RISE_MIN_DIFF := 256    # overflow-up needs a full cell of head advantage
 const CELL_UNITS := 256       # height units per tile for head math
+const DIFFUSER_FLOW := 96    # <tune> — flow_mag above this marks a diffuser (world §13; game-side consumer)
+
+# flow direction codes (8-way); FLOW_DX/FLOW_DY convert a code to tile steps
+enum FlowDir { NONE, UP, UP_RIGHT, RIGHT, DOWN_RIGHT, DOWN, DOWN_LEFT, LEFT, UP_LEFT }
+const FLOW_DX: Array[int] = [0, 0, 1, 1, 1, 0, -1, -1, -1]
+const FLOW_DY: Array[int] = [0, -1, -1, 0, 1, 1, 1, 0, -1]
 
 const W: int = TilePacket.Mat.WATER   # the water code, named once for call sites
 
@@ -24,13 +30,19 @@ var width: int
 var height: int
 var stone: GridStone
 var pk: TilePacket            # alias of stone.packet — the data lives there
+var tick_count := 0           # ticks so far; parity flips the sweep direction
 
 # private: per-tick bookkeeping, rebuilt by _analyze().
 # These are OPINION caches, not matter: derived each tick, one tick stale.
-var _tick_count := 0           # ticks so far; parity flips the sweep direction
 var _region_of: PackedInt32Array
 var _regions: Array = []       # per pocket: [{ body_top: { body id -> row } }]
 var _escape: PackedByteArray   # per cell: the air here can reach open sky
+
+# private: per-tick flow export — derived opinion, rebuilt wholesale every tick
+var _flow_mag := PackedByteArray()   # total units arriving per tile this tick
+var _flow_best := PackedByteArray()  # largest single arrival (dominant-dir source)
+var _flow_dir := PackedByteArray()   # direction code of the dominant arrival
+
 var _body_of: PackedInt32Array # per cell: connected-water body id, -1 = none
 var _next_body_id := 0
 
@@ -40,14 +52,24 @@ func _init(w: int, h: int, terrain: GridStone) -> void:
 	height = h
 	stone = terrain
 	pk = terrain.packet
+	
 	_body_of = PackedInt32Array()
 	_body_of.resize(w * h)
 	_body_of.fill(-1)
+	
 	_region_of = PackedInt32Array()
 	_region_of.resize(w * h)
 	_region_of.fill(-1)
+	
 	_escape = PackedByteArray()
 	_escape.resize(w * h)
+	
+	_flow_mag.resize(w * h)
+	_flow_best.resize(w * h)
+	_flow_dir.resize(w * h)
+	_flow_mag.fill(0)
+	_flow_best.fill(0)
+	_flow_dir.fill(0)
 
 ## Flat-array index of tile (x, y).
 func idx(x: int, y: int) -> int:
@@ -105,6 +127,27 @@ func is_air_sealed(x: int, y: int) -> bool:
 		return false
 	return not _escape[idx(x, y)]
 
+## Register matter arriving at tile i (mag units, dir code); magnitudes sum, direction follows the largest single arrival (first stamp wins ties — sweep order is fixed, so deterministic); sim moves stamp inline, room sources like rain stamp at tick head.
+func flow_stamp(i: int, dir: int, mag: int) -> void:
+	if mag <= 0:
+		return
+	_flow_mag[i] = mini(255, _flow_mag[i] + mag)
+	if mag > _flow_best[i]:
+		_flow_best[i] = mag
+		_flow_dir[i] = dir
+
+## Flow strength at (x, y): total units that arrived this tick; 0 outside.
+func get_flow_mag(x: int, y: int) -> int:
+	if not in_bounds(x, y):
+		return 0
+	return _flow_mag[idx(x, y)]
+
+## Dominant flow direction at (x, y); NONE outside.
+func get_flow_dir(x: int, y: int) -> int:
+	if not in_bounds(x, y):
+		return FlowDir.NONE
+	return _flow_dir[idx(x, y)]
+
 ## Total water units in the field — the leak-check checksum.
 func total() -> int:
 	return pk.mat_total(W)
@@ -120,7 +163,11 @@ func clear() -> void:
 
 ## One simulation tick: relabel, run the four rules, verify volume, verify the ledger, emit band changes.
 func tick() -> void:
-	_tick_count += 1
+	tick_count += 1
+	# tick head: last tick's flow dies before any new move stamps
+	_flow_mag.fill(0)
+	_flow_best.fill(0)
+	_flow_dir.fill(0)
 	var snap := _levels_snapshot()
 	_analyze()
 	var checksum := total()
@@ -271,7 +318,7 @@ func _segment_top(x: int, y: int) -> int:
 ## Run _cell_pass over every cell in this tick's sweep order.
 func _cell_pass_all() -> void:
 	# bottom-up scanline, sweep alternating per tick: columns fall coherently, no lateral bias
-	var ltr := (_tick_count % 2 == 0)
+	var ltr := (tick_count % 2 == 0)
 	for y in range(height - 1, -1, -1):
 		if ltr:
 			for x in width:
@@ -286,7 +333,7 @@ func _cell_pass(i: int) -> void:
 	if w == 0:
 		return
 	var p := _xy_of(i)
-	var flip := -1 if (_tick_count % 2 == 0) else 1
+	var flip := -1 if (tick_count % 2 == 0) else 1
 
 	# 1) FALL — everything that fits goes straight down
 	if p.y + 1 < height:
@@ -296,6 +343,7 @@ func _cell_pass(i: int) -> void:
 			var move := mini(w, free)
 			var taken := pk.take_pool(i, W, move)  # take-give: conservation
 			pk.add_pool(b, W, taken)               #   by construction
+			flow_stamp(b, FlowDir.DOWN, taken)
 			return
 
 	# 2) POUR — over a lip into dry space only (leveling is seek-level's job)
@@ -313,6 +361,7 @@ func _cell_pass(i: int) -> void:
 				var move := mini(w, free)
 				var taken := pk.take_pool(i, W, move)
 				pk.add_pool(t, W, taken)
+				flow_stamp(t, FlowDir.DOWN_RIGHT if dx > 0 else FlowDir.DOWN_LEFT, taken)
 				return
 
 	# 3) CREEP — advance into dry space, both sides, half-difference each
@@ -329,6 +378,7 @@ func _cell_pass(i: int) -> void:
 			var move := (w - nw) >> 1
 			var taken := pk.take_pool(i, W, move)
 			pk.add_pool(n, W, taken)
+			flow_stamp(n, FlowDir.RIGHT if dx > 0 else FlowDir.LEFT, taken)
 			w = pk.get_pool(i, W)  # refresh: side two reads what side one left
 
 ## May water from src enter dry cell t? Only if the displaced air has somewhere to go.
@@ -433,8 +483,11 @@ func _transfer_level(s: int, t: int, y: int, diff: int, tops: PackedInt32Array) 
 	# deposit at the receiver's surface (or one above, if it overflowed)
 	if pk.pool_free(t_i) > 0:
 		pk.add_pool(t_i, W, move)
+		flow_stamp(t_i, FlowDir.RIGHT if s < t else FlowDir.LEFT, move)
 	else:
-		pk.add_pool(idx(t, t_top - 1), W, move)
+		var ai := idx(t, t_top - 1)
+		pk.add_pool(ai, W, move)
+		flow_stamp(ai, FlowDir.UP, move)
 	return move
 
 ## Can the air above the receiver's surface give way to this transfer?

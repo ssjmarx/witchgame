@@ -21,3 +21,4 @@ const CURSOR        := Color("#eef0f4")
 const DBG_SEALED    := Color("#5e2833")   # trapped air — "why won't my water go in?"
 const DBG_OPEN      := Color("#1c3a39")   # vented air
 const LEVEL_DBG     := Color("#a0d8c0")   # where seek-level thinks the surface is
+const FLOW_DBG 		:= Color("5ae682ff")

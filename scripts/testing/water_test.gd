@@ -144,6 +144,7 @@ func _unhandled_key_input(event: InputEvent) -> void:
 			renderer.redraw()
 		KEY_K:
 			run_self_tests()
+			run_packet_tests()
 
 ## Tile under the mouse, or (-1, -1) when off the grid.
 func _hover_tile() -> Vector2i:
@@ -267,6 +268,92 @@ func run_self_tests() -> void:
 	_test("Ex5  bottom pocket floods, columns level", KEY_F5, check_ex5)
 	_test("Ex6  rotation around stone", KEY_F6, check_ex6)
 	print("── done ──")
+
+## Packet unit tests — pure TilePacket behavior, no carving, instant.
+func run_packet_tests() -> void:
+	print("── packet unit tests ──")
+	var check_drain := func() -> String:
+		var pk := TilePacket.new(4, 4)
+		var i := pk.idx(2, 2)
+		if pk.add_pool(i, TilePacket.Mat.WATER, 10) != 10:
+			return "water add refused"
+		if pk.add_pool(i, TilePacket.Mat.STEAM, 30) != 30:
+			return "steam add refused"
+		var got := pk.drain_lightest(i, 25)
+		if got != 25:
+			return "first drain took %d, want 25" % got
+		if pk.get_pool(i, TilePacket.Mat.STEAM) != 5:
+			return "steam left %d, want 5" % pk.get_pool(i, TilePacket.Mat.STEAM)
+		got = pk.drain_lightest(i, 999)
+		if got != 5:
+			return "second drain took %d, want 5" % got
+		if pk.get_pool(i, TilePacket.Mat.WATER) != 10:
+			return "water disturbed: %d" % pk.get_pool(i, TilePacket.Mat.WATER)
+		if not pk.assert_all():
+			return "ledger drifted"
+		return ""
+		
+	var check_displace := func() -> String:
+		var pk := TilePacket.new(4, 4)
+		var i := pk.idx(1, 1)
+		if pk.add_pool(i, TilePacket.Mat.WATER, 255) != 255:
+			return "fill refused"
+		var deficit := pk.set_sub(i, 0, 1)
+		if deficit != 64:
+			return "deficit %d, want 64" % deficit
+		# ejection loop from the drain_lightest ruling — the flow engine's eventual job, rehearsed here
+		var guard := 0
+		while deficit > 0 and guard < TilePacket.MAT_COUNT:
+			deficit -= pk.drain_lightest(i, deficit)
+			guard += 1
+		if deficit != 0:
+			return "ejection stalled, %d left" % deficit
+		if pk.pool_total(i) != 191:
+			return "pool %d after ejection, want 191" % pk.pool_total(i)
+		if not pk.assert_all():
+			return "ledger drifted"
+		return ""
+		
+	var check_clearmat := func() -> String:
+		var pk := TilePacket.new(4, 4)
+		pk.add_pool(pk.idx(1, 1), TilePacket.Mat.WATER, 100)
+		pk.add_pool(pk.idx(2, 2), TilePacket.Mat.WATER, 50)
+		if pk.mat_total(TilePacket.Mat.WATER) != 150:
+			return "setup total wrong"
+		pk.clear_mat(TilePacket.Mat.WATER)
+		if pk.mat_total(TilePacket.Mat.WATER) != 0:
+			return "column not empty"
+		if not pk.assert_all():
+			return "ledger drifted"
+		return ""
+		
+	var check_clamp := func() -> String:
+		var pk := TilePacket.new(4, 4)
+		var i := pk.idx(1, 1)
+		var got := pk.add_pool(i, TilePacket.Mat.WATER, 300)
+		if got != 255:
+			return "add_pool returned %d, want 255" % got
+		if pk.add_pool(i, TilePacket.Mat.OIL, 10) != 0:
+			return "full tile accepted oil"
+		if pk.pool_total(i) != 255:
+			return "tile holds %d, want 255" % pk.pool_total(i)
+		if not pk.assert_all():
+			return "ledger drifted"
+		return ""
+		
+	_ptest("PT1  drain_lightest grader", check_drain)
+	_ptest("PT2  set_sub reports displacement deficit", check_displace)
+	_ptest("PT3  clear_mat books the removal", check_clearmat)
+	_ptest("PT4  > 255 capacity rejected", check_clamp)
+	print("── done ──")
+
+## PASS/FAIL runner for the packet tests (mirror of _test, no carving).
+func _ptest(name: String, fn: Callable) -> void:
+	var err: String = fn.call()
+	if err == "":
+		print("PASS  %s" % name)
+	else:
+		print("FAIL  %s — %s" % [name, err])
 
 ## Carve one example fresh, run it to equilibrium, report PASS/FAIL/leak.
 @warning_ignore("shadowed_variable_base_class")
