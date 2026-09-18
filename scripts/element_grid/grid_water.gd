@@ -424,8 +424,7 @@ func _transfer_level(s: int, t: int, y: int, diff: int, tops: PackedInt32Array) 
 	var move := mini(mini(PRESSURE_RATE, diff >> 1), mini(room, avail))
 	if move <= 0:
 		return 0
-	# remove from the donor's surface, walking down toward the junction
-	# take_pool reports what it got, so the walk cannot over-draw
+	# remove from the donor's surface, walking down toward the junction; take_pool reports what it got, so the walk cannot over-draw
 	var remaining := move
 	var yy2 := s_top
 	while remaining > 0:

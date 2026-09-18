@@ -38,3 +38,70 @@ Update the bank:
 - at the end of every working session,
 - whenever the human reports a milestone, ruling, or state change,
 - whenever you notice the bank has drifted from reality.
+
+## 6. House comment style and the docstring linter
+
+Every `.gd` file in the project is audited by **`build_project_map.py`** (repo
+root) against a strict comment house style. On a clean pass it writes
+`docs/PROJECT_MAP.md`; on any violation it writes nothing and reports every
+issue. Since comments in `scripts/` are the only code you may touch (§2), every
+comment or docstring you write **must conform — re-run the audit after every
+comment edit.**
+
+### The three enforced rules
+
+1. **File header.** Every `.gd` file begins with exactly **3 consecutive `##`
+   lines**: a compact, information-dense description of the file's purpose.
+   Not 2, not 4, and no blank line before them. Example:
+
+       ## The unified per-tile packet (world.md §2), stored structure-of-arrays:
+       ## one PackedByteArray column per field, one row per tile. The tile index
+       ## is the row number.
+
+2. **Function docstrings.** Every `func` has exactly **1 `##` line directly
+   above it, at the same indent**. Never inside the body. `@annotations` may
+   sit between the docstring and the `func` line:
+
+       ## Tile (x, y) of flat index i.
+       func xy_of(i: int) -> Vector2i:
+           @warning_ignore("integer_division")
+           return Vector2i(i % w, i / w)
+
+3. **In-function comments.** Inside a function body, comments are **single `#`
+   1-liners.** Two things are flagged: runs of 2 or more consecutive comment
+   lines (merge them into one line), and any `##` marker inside a body
+   (docstrings belong above the func). Inline trailing comments on a code line
+   are fine:
+
+       var avail := 0
+       # one comment line at a time, however long it needs to be
+       take_pool(idx(s, yy2), W, remaining)
+
+### Conventions that pass the audit (and should be kept)
+
+- Section banners at class scope, outside functions, e.g.
+  `# -- Indexing ------...------`.
+- Docstrings written as dense one-liners covering: what the function does,
+  its inputs, its return value, and any invariants the caller must know.
+  Treat the docstring as the function's API documentation — the project map
+  carries it into every AI session, so vague docstrings degrade every future
+  session's context.
+- One blank line between a docstring's func and the next docstring.
+
+### Running the audit
+
+    python3 build_project_map.py           # audit; writes docs/PROJECT_MAP.md on success
+    python3 build_project_map.py --force   # write the map even if issues remain
+
+Exit codes: `0` = clean (map written) · `1` = style violations (no map) ·
+`2` = no `.gd` files found. Run from the project root; it skips `.git`,
+`.godot`, and hidden directories.
+
+### Why this matters
+
+`docs/PROJECT_MAP.md` lists every file (with its 3-line header) and every
+function as `signature — docstring`, and is pasted into AI context at the
+start of every development session. That means: the docstrings you write
+**are** the documentation future AI sessions rely on. `PROJECT_MAP.md` itself
+is generated — never hand-edit it; fix the docstrings in the `.gd` sources and
+re-run the audit.

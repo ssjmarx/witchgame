@@ -64,12 +64,12 @@ var steam := PackedByteArray()
 
 var _booked := PackedInt64Array()   # ledger: booked totals, one per row
 
+## Allocate the w×h grid: every column resized, ledger zeroed.
 func _init(p_w: int, p_h: int) -> void:
 	w = p_w
 	h = p_h
 	var n := w * h
-	# Ten boring resizes, no clever loop: a packed array passed through a
-	# temporary may not resize the member. Boring is bulletproof.
+	# Ten boring resizes, no clever loop: a packed array passed through a temporary may not resize the member. Boring is bulletproof.
 	terrain.resize(n)
 	stone_s.resize(n)
 	soil_s.resize(n)
@@ -83,6 +83,7 @@ func _init(p_w: int, p_h: int) -> void:
 	_booked.resize(LED_COUNT)
 	clear()
 
+## Zero every column and the ledger.
 func clear() -> void:
 	terrain.fill(T.AIR)
 	stone_s.fill(0)
@@ -98,39 +99,41 @@ func clear() -> void:
 
 # -- Indexing ----------------------------------------------------------------
 
+## Flat-array index of tile (x, y).
 func idx(x: int, y: int) -> int:
 	return y * w + x
 
+## True if (x, y) lies inside the grid.
 func in_bounds(x: int, y: int) -> bool:
 	return x >= 0 and y >= 0 and x < w and y < h
 
+## Tile (x, y) of flat index i.
 func xy_of(i: int) -> Vector2i:
 	@warning_ignore("integer_division")
 	return Vector2i(i % w, i / w)
 
 # -- Terrain and subtile solids ----------------------------------------------
 
+## Terrain value at tile i.
 func get_terrain(i: int) -> int:
 	return terrain[i]
 
+## Set terrain at tile i; true when the value changed (GridStone's signal rides on this).
 func set_terrain(i: int, t: int) -> bool:
-	## True when the value changed (GridStone's signal rides on this).
 	if terrain[i] == t:
 		return false
 	terrain[i] = t
 	return true   # capacity is derived; nothing else to maintain
 
+## Subtile nibble at tile i; kind: 0 stone_s, 1 soil_s, 2 ice_s (matches SUB_SINK order).
 func get_sub(i: int, kind: int) -> int:
-	## kind: 0 stone_s, 1 soil_s, 2 ice_s (matches SUB_SINK order).
 	match kind:
 		0: return stone_s[i]
 		1: return soil_s[i]
 		_: return ice_s[i]
 
+## Set a nibble column, book the popcount delta; returns the capacity deficit created (ejecting that overflow is the flow engine's job, world §3).
 func set_sub(i: int, kind: int, n: int) -> int:
-	## Set a nibble column. Books the popcount delta. Returns the capacity
-	## deficit created (pool now over budget) -- ejecting that overflow is
-	## the flow engine's job (displacement, world §3); the packet only reports.
 	n = clampi(n, 0, NIBBLE_MAX)
 	var old := get_sub(i, kind)
 	if old == n:
@@ -144,9 +147,8 @@ func set_sub(i: int, kind: int, n: int) -> int:
 
 # -- Capacity ----------------------------------------------------------------
 
+## Full-solid terrain = 0, otherwise 255 minus 64 per solid subtile (stone + soil + ice).
 func pool_capacity(i: int) -> int:
-	## The packet owns capacity: full-solid terrain = 0, otherwise
-	## 255 minus 64 per solid subtile (stone + soil + ice).
 	if FULL_SOLID[terrain[i]]:
 		return 0
 	var n = POPCOUNT[stone_s[i]] + POPCOUNT[soil_s[i]] + POPCOUNT[ice_s[i]]
@@ -154,6 +156,7 @@ func pool_capacity(i: int) -> int:
 
 # -- The content pool --------------------------------------------------------
 
+## Units of material m held at tile i.
 func get_pool(i: int, m: int) -> int:
 	match m:
 		Mat.WATER: return water[i]
@@ -163,14 +166,16 @@ func get_pool(i: int, m: int) -> int:
 		Mat.SMOKE: return smoke[i]
 		_: return steam[i]
 
+## Units of every material held at tile i.
 func pool_total(i: int) -> int:
 	return water[i] + oil[i] + acid[i] + lava[i] + smoke[i] + steam[i]
 
+## Headroom left at tile i (capacity minus total).
 func pool_free(i: int) -> int:
 	return pool_capacity(i) - pool_total(i)
 
+## The ONLY place pool bytes are mutated. Pre-clamped by callers.
 func _add_units(i: int, m: int, amount: int) -> void:
-	## The ONLY place pool bytes are mutated. Pre-clamped by callers.
 	match m:
 		Mat.WATER: water[i] += amount
 		Mat.OIL: oil[i] += amount
@@ -179,9 +184,8 @@ func _add_units(i: int, m: int, amount: int) -> void:
 		Mat.SMOKE: smoke[i] += amount
 		Mat.STEAM: steam[i] += amount
 
+## Add up to amount units of m; returns units accepted (refused units are NOT destroyed -- the caller ejects them by flow rules).
 func add_pool(i: int, m: int, amount: int) -> int:
-	## Add up to `amount` units of m; returns units accepted. Refused units
-	## are NOT destroyed -- the caller ejects them by flow rules.
 	if amount <= 0:
 		return 0
 	var accepted := mini(amount, maxi(0, pool_free(i)))
@@ -190,8 +194,8 @@ func add_pool(i: int, m: int, amount: int) -> int:
 		_book(m, accepted)
 	return accepted
 
+## Remove up to amount units; returns units actually taken.
 func take_pool(i: int, m: int, amount: int) -> int:
-	## Remove up to `amount` units; returns units actually taken.
 	if amount <= 0:
 		return 0
 	var taken := mini(amount, get_pool(i, m))
@@ -200,10 +204,8 @@ func take_pool(i: int, m: int, amount: int) -> int:
 		_book(m, -taken)
 	return taken
 
+## Tool path (paint/erase): force tile i's m toward v; returns spill (units refused). Never destroys other materials or pushes past capacity (over-budget stays until flow ejects).
 func set_pool(i: int, m: int, v: int) -> int:
-	## Tool path (paint/erase): force tile i's m toward v. Returns spill --
-	## units of v refused. Never destroys other materials; never pushes the
-	## tile over capacity (an over-budget tile stays until flow ejects).
 	var c := get_pool(i, m)
 	var target := clampi(v, 0, POOL_MAX)
 	var accepted := target
@@ -217,11 +219,12 @@ func set_pool(i: int, m: int, v: int) -> int:
 
 # -- The ledger ---------------------------------------------------------------
 
+## Apply delta to the booked total of one ledger row.
 func _book(row: int, delta: int) -> void:
 	_booked[row] += delta
 
+## Fresh recount of one pool column.
 func mat_total(m: int) -> int:
-	## Fresh recount of one pool column.
 	var sum := 0
 	match m:
 		Mat.WATER:
@@ -238,9 +241,8 @@ func mat_total(m: int) -> int:
 			for v in steam: sum += v
 	return sum
 
+## Double-entry check: booked totals vs fresh recounts, plus the per-tile pool constraint. Called at the end of every tick.
 func assert_all() -> bool:
-	## Double-entry check: booked totals vs fresh recounts, plus the
-	## per-tile pool constraint. Called at the end of every tick.
 	var ok := true
 	for m in MAT_COUNT:
 		var counted := mat_total(m)
@@ -269,10 +271,8 @@ func assert_all() -> bool:
 			ok = false
 	return ok
 
-## remove up to amount units of single lowest density mat at tile i, return units taken
+## Remove up to amount units of the single lowest-density material present at tile i; returns units taken.
 func drain_lightest(i: int, amount: int) -> int:
-	## Remove up to `amount` units of the single lowest-density material
-	## present at tile i. Returns units taken.
 	var best := -1
 	var best_d := 9999
 	for m in MAT_COUNT:
