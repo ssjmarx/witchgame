@@ -52,7 +52,7 @@ The laws. When in doubt, these decide.
 ```
 TERRAIN : AIR, STONE, WOOD, SOIL, BRAZIER, SPIKE, DOOR, DOOR_CLOSED
 STONE_S : 4-bit occupancy — carve/cast granularity (DOOR/BRAZIER/SPIKE never subtiled).
-          LOOSE flag: loose subtiles run the soil move rules; solid stone stays static
+		  LOOSE flag: loose subtiles run the soil move rules; solid stone stays static
 SOIL_S  : 4-bit occupancy — the nibble IS the matter (popcount = mass)
 ICE_S   : 4-bit occupancy — 32 water ⇄ 1 subtile, displaces 64
 FUEL    : 0–255, attached to solids (vine 60, wood 255, coal 255)     — outside the pool
@@ -274,25 +274,25 @@ One `Image` the size of the room, 10 Hz, `ImageTexture`, under actors. The sim s
 
 ```
 LevelSpec {
-    meta:  { seed, name, tile_w, tile_h, palette: 8×[4], music, lighting: profile }
-    rooms:  [ RoomSpec ]
+	meta:  { seed, name, tile_w, tile_h, palette: 8×[4], music, lighting: profile }
+	rooms:  [ RoomSpec ]
 }
 RoomSpec {
-    rect: Rect2i                     # tiles within the level
-    terrain: 2D [TERRAIN]
-    stone_sub, soil_sub: 2D nibble maps (stone carries the LOOSE flag)
-    pool (sparse → per-type): water, oil, acid, lava, smoke, steam
-    solids-held: fuel, damp
-    surfaces: moss, vine, coal, slime, glaze
-    flags: cold_tiles, scorch, secrets
-    wind: draft field (authored vectors — system TBD)
-    rain: open-sky column list
-    fixtures: brazier, spike, plate, lever, hook, pedestal,
-              swing_ring, beam_dump, pocket { orientation },
-              stream_gate, door { to, locked, policy }
-    spawns: [ { enemy | pot, x, y, patrol?, contents? } ]
-    markers: chalk, plumb targets
-    beats: [ authored annotations ]    # authoring metadata, e.g. the strip's reaches
+	rect: Rect2i                     # tiles within the level
+	terrain: 2D [TERRAIN]
+	stone_sub, soil_sub: 2D nibble maps (stone carries the LOOSE flag)
+	pool (sparse → per-type): water, oil, acid, lava, smoke, steam
+	solids-held: fuel, damp
+	surfaces: moss, vine, coal, slime, glaze
+	flags: cold_tiles, scorch, secrets
+	wind: draft field (authored vectors — system TBD)
+	rain: open-sky column list
+	fixtures: brazier, spike, plate, lever, hook, pedestal,
+			  swing_ring, beam_dump, pocket { orientation },
+			  stream_gate, door { to, locked, policy }
+	spawns: [ { enemy | pot, x, y, patrol?, contents? } ]
+	markers: chalk, plumb targets
+	beats: [ authored annotations ]    # authoring metadata, e.g. the strip's reaches
 }
 ```
 
