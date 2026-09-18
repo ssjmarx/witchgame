@@ -269,6 +269,7 @@ func run_self_tests() -> void:
 	print("── done ──")
 
 ## Carve one example fresh, run it to equilibrium, report PASS/FAIL/leak.
+@warning_ignore("shadowed_variable_base_class")
 func _test(name: String, preset_key: int, check: Callable) -> void:
 	var t_stone := GridStone.new(GRID_W, GRID_H)
 	var t_water := GridWater.new(GRID_W, GRID_H, t_stone)
