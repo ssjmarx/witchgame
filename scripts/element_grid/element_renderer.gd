@@ -1,18 +1,25 @@
-class_name ElementRenderer
-extends RefCounted
 ## GDD §3: one Image the size of the map, regenerated at tick rate, pushed
 ## through an ImageTexture, drawn under actors. The sim state *is* the picture.
 ## Regenerating 240×240 RGBA ten times a second is nothing — keep it dumb.
 
-const TILE := 16
+class_name ElementRenderer
+extends RefCounted
 
+const TILE := 16  # pixels per tile
+
+# the sim state this renderer draws
 var stone: GridStone
 var water: GridWater
+
+# the picture: one map-sized image pushed through a texture
 var image: Image
 var texture: ImageTexture
+
+# overlays
 var debug := false          # G: air pockets + grid
 var hover := Vector2i(-1, -1)
 
+## Bind the sim pair and create the map-sized image and texture.
 func _init(terrain: GridStone, field: GridWater) -> void:
 	stone = terrain
 	water = field
@@ -20,7 +27,7 @@ func _init(terrain: GridStone, field: GridWater) -> void:
 	image = Image.create(terrain.width * TILE, terrain.height * TILE, false, Image.FORMAT_RGBA8)
 	texture = ImageTexture.create_from_image(image)
 
-
+## Repaint every tile plus overlays into the texture; call once per tick.
 func redraw() -> void:
 	image.fill(Palette.BG)
 	for y in stone.height:
@@ -32,7 +39,7 @@ func redraw() -> void:
 		_draw_cursor()
 	texture.update(image)
 
-
+## Paint one tile: beveled stone, or a water column with crest.
 func _draw_tile(x: int, y: int) -> void:
 	var px := x * TILE
 	var py := y * TILE
@@ -45,9 +52,7 @@ func _draw_tile(x: int, y: int) -> void:
 	var w := water.get_water(x, y)
 	if w < GridWater.LINE:
 		return
-	# The interior of a water column renders as one solid mass: a tile with
-	# visible water above it is full-tile blue — no crest, no seam.
-	# Only the surface tile — air above — draws the level and the crest.
+	# a tile under visible water is solid blue; only the surface tile draws level and crest
 	var covered: bool = y > 0 and water.get_water(x, y - 1) >= GridWater.LINE
 	if covered:
 		image.fill_rect(Rect2i(px, py, TILE, TILE), Palette.WATER)
@@ -56,8 +61,10 @@ func _draw_tile(x: int, y: int) -> void:
 	var top := py + TILE - lines
 	image.fill_rect(Rect2i(px, top, TILE, lines), Palette.WATER)
 	image.fill_rect(Rect2i(px, top, TILE, 1), Palette.WATER_SURFACE)
-		
+
+## Overlay air pockets, per-segment level lines, and the tile grid (G).
 func _draw_debug() -> void:
+	# air-pocket states: sealed vs vented
 	for y in stone.height:
 		for x in stone.width:
 			if water.is_air_passable(x, y):
@@ -77,6 +84,7 @@ func _draw_debug() -> void:
 					y += 1
 			else:
 				y += 1
+	# the tile grid
 	var wpx := stone.width * TILE
 	var hpx := stone.height * TILE
 	for x in range(0, wpx, TILE):
@@ -84,7 +92,7 @@ func _draw_debug() -> void:
 	for y in range(0, hpx, TILE):
 		image.fill_rect(Rect2i(0, y, wpx, 1), Palette.GRID)
 
-
+## Draw the hover cursor as a tile outline.
 func _draw_cursor() -> void:
 	var px := hover.x * TILE
 	var py := hover.y * TILE

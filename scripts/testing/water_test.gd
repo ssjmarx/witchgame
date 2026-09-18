@@ -1,16 +1,19 @@
-extends Node2D
 ## Water sandbox — element sim v2.
 ## 1 stone / 2 water select material, LMB paints, RMB erases.
 ## K runs the six acceptance examples headlessly and reports PASS/FAIL.
 
-const GRID_W := 15
-const GRID_H := 15
-const TILE := 16
-const PAINT_DOSE := 64
-const TEST_TICKS := 3000
+extends Node2D
 
+const GRID_W := 15        # tiles across
+const GRID_H := 15        # tiles down
+const TILE := 16          # pixels per tile
+const PAINT_DOSE := 64    # water units added per tick while painting
+const TEST_TICKS := 3000  # ticks each self-test runs before checking
+
+# materials the mouse can lay down
 enum Paint { STONE, WATER }
 
+# F1-F6 acceptance diagrams: s stone, w water (255 units), a air
 const PRESETS := {
 	KEY_F1: [
 		"saaas",
@@ -57,15 +60,18 @@ const PRESETS := {
 	],
 }
 
+# the sim trio and its display
 var stone: GridStone
 var water: GridWater
 var renderer: ElementRenderer
 var sprite: Sprite2D
+
+# editor state
 var paint := Paint.WATER
 var paused := false
-var _last_info := ""
+var _last_info := ""  # last HUD text; skips label writes when unchanged
 
-
+## Build the grids and renderer, wire timer and signals, load demo F1.
 func _ready() -> void:
 	stone = GridStone.new(GRID_W, GRID_H)
 	water = GridWater.new(GRID_W, GRID_H, stone)
@@ -79,7 +85,7 @@ func _ready() -> void:
 	water.levels_changed.connect(_on_levels_changed)
 	_load_preset(KEY_F1)
 
-
+## Fixed-step heartbeat: dose held-mouse water, tick the sim, redraw.
 func _on_tick() -> void:
 	if paused:
 		return
@@ -91,11 +97,12 @@ func _on_tick() -> void:
 	water.tick()
 	renderer.redraw()
 
-
+## Track the hover tile; RMB erases, LMB lays stone; refresh the HUD.
 func _process(_delta: float) -> void:
 	var t := _hover_tile()
 	var dirty := t != renderer.hover
 	renderer.hover = t
+	# RMB erases both layers; LMB paints stone (water dosing happens on tick)
 	if t.x >= 0:
 		if Input.is_mouse_button_pressed(MOUSE_BUTTON_RIGHT):
 			water.set_water(t.x, t.y, 0)
@@ -108,7 +115,7 @@ func _process(_delta: float) -> void:
 		renderer.redraw()
 	_update_info(t)
 
-
+## Hotkeys: F1-F6 presets, 1/2 material, SPC pause, T step, X clear, G debug, K tests.
 func _unhandled_key_input(event: InputEvent) -> void:
 	var key := event as InputEventKey
 	if key == null or not key.pressed or key.echo:
@@ -138,7 +145,7 @@ func _unhandled_key_input(event: InputEvent) -> void:
 		KEY_K:
 			run_self_tests()
 
-
+## Tile under the mouse, or (-1, -1) when off the grid.
 func _hover_tile() -> Vector2i:
 	var p := get_global_mouse_position()
 	var t := Vector2i(floori(p.x / TILE), floori(p.y / TILE))
@@ -146,10 +153,8 @@ func _hover_tile() -> Vector2i:
 		return Vector2i(-1, -1)
 	return t
 
-
+## Carve a diagram wrapped in a stone U-shell (open top); returns its origin.
 func _carve_preset(p_stone: GridStone, p_water: GridWater, rows: Array) -> Vector2i:
-	## Draw the diagram wrapped in a U-shell: stone one tile out on the
-	## left, right, and below; top open to the sky. Returns diagram origin.
 	var first: String = rows[0]
 	var pw := first.length()
 	var ph := rows.size()
@@ -172,7 +177,7 @@ func _carve_preset(p_stone: GridStone, p_water: GridWater, rows: Array) -> Vecto
 					pass
 	return Vector2i(ox, oy)
 
-
+## Reset both grids and carve the demo bound to a preset key.
 func _load_preset(keycode: int) -> void:
 	stone.clear()
 	water.clear()
@@ -180,11 +185,10 @@ func _load_preset(keycode: int) -> void:
 	paused = false
 	renderer.redraw()
 
-
-# ---------------------------------------------------------- self-tests
-
+## Run the six acceptance examples headlessly and report PASS/FAIL.
 func run_self_tests() -> void:
 	print("── water self-tests, %d ticks each ──" % TEST_TICKS)
+	# each check receives [stone, water, origin] and returns "" on pass, else the failure
 	var check_ex1 := func(s: Array) -> String:
 		var w: GridWater = s[1]
 		var o: Vector2i = s[2]
@@ -264,7 +268,7 @@ func run_self_tests() -> void:
 	_test("Ex6  rotation around stone", KEY_F6, check_ex6)
 	print("── done ──")
 
-
+## Carve one example fresh, run it to equilibrium, report PASS/FAIL/leak.
 func _test(name: String, preset_key: int, check: Callable) -> void:
 	var t_stone := GridStone.new(GRID_W, GRID_H)
 	var t_water := GridWater.new(GRID_W, GRID_H, t_stone)
@@ -280,7 +284,7 @@ func _test(name: String, preset_key: int, check: Callable) -> void:
 	else:
 		print("PASS  %s" % name)
 
-
+## Rebuild the HUD line (pause state, hover tile, band) when it changes.
 func _update_info(t: Vector2i) -> void:
 	var info := "PAUSED (T steps)" if paused else ""
 	if t.x >= 0:
@@ -293,6 +297,6 @@ func _update_info(t: Vector2i) -> void:
 		_last_info = info
 		$UI/Hint.text = "1 stone  2 water  LMB paint  RMB erase\nSPC pause  T step  X clear  G debug  K tests  F1-F6 demos\n" + info
 
-
+## No-op: redraws already ride the tick; keeps the signal wiring visible.
 func _on_levels_changed(_cells) -> void:
 	pass
