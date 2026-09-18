@@ -7,6 +7,7 @@ extends RefCounted
 
 const TILE := 16  # pixels per tile
 const FLOW_STREAK := 48  # <tune> — downward flow above this draws waterfall streaks
+const SUB_QUADS: Array = [[GridSand.TL, 0, 0], [GridSand.TR, 8, 0], [GridSand.BL, 0, 8], [GridSand.BR, 8, 8]]
 
 # the sim state this renderer draws
 var stone: GridStone
@@ -50,6 +51,11 @@ func _draw_tile(x: int, y: int) -> void:
 		image.fill_rect(Rect2i(px, py, 1, TILE), Palette.STONE_DARK)
 		image.set_pixel(px + 11, py + 11, Palette.STONE_DARK)
 		return
+
+	var n := stone.packet.get_sub(stone.idx(x, y), TilePacket.K_SOIL)
+	if n != 0:
+		_draw_soil(x, y, px, py, n)
+
 	var w := water.get_water(x, y)
 	if w < GridWater.LINE:
 		return
@@ -132,3 +138,24 @@ func _draw_flow(x: int, y: int, px: int, py: int) -> void:
 	image.fill_rect(Rect2i(s1, py, 1, ln), Palette.WATER_SURFACE)
 	if s2 != s1:
 		image.fill_rect(Rect2i(s2, py, 1, ln), Palette.WATER_SURFACE)
+
+
+## Loose soil: one 8x8 quad per set nibble bit, light lip on subtiles with no soil directly above.
+func _draw_soil(x: int, y: int, px: int, py: int, n: int) -> void:
+	var n_up := 0
+	if y > 0:
+		n_up = stone.packet.get_sub(stone.idx(x, y - 1), TilePacket.K_SOIL)
+	for c in SUB_QUADS:
+		if (n & c[0]) == 0:
+			continue
+		image.fill_rect(Rect2i(px + c[1], py + c[2], 8, 8), Palette.SOIL)
+		var covered := false
+		if c[0] == GridSand.BL:
+			covered = (n & GridSand.TL) != 0
+		elif c[0] == GridSand.BR:
+			covered = (n & GridSand.TR) != 0
+		elif y > 0:
+			var want := GridSand.BL if c[0] == GridSand.TL else GridSand.BR
+			covered = (n_up & want) != 0
+		if not covered:
+			image.fill_rect(Rect2i(px + c[1], py + c[2], 8, 1), Palette.SOIL_LIP)

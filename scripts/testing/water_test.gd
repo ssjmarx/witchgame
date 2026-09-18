@@ -2,16 +2,9 @@
 ## 1 stone / 2 water select material, LMB paints, RMB erases.
 ## K runs the six acceptance examples headlessly and reports PASS/FAIL.
 
-extends Node2D
+extends TestSandbox
 
-const GRID_W := 15        # tiles across
-const GRID_H := 15        # tiles down
-const TILE := 16          # pixels per tile
 const PAINT_DOSE := 64    # water units added per tick while painting
-const TEST_TICKS := 3000  # ticks each self-test runs before checking
-
-# materials the mouse can lay down
-enum Paint { STONE, WATER }
 
 # F1-F6 acceptance diagrams: s stone, w water (255 units), a air
 const PRESETS := {
@@ -60,123 +53,48 @@ const PRESETS := {
 	],
 }
 
-# the sim trio and its display
-var stone: GridStone
-var water: GridWater
-var renderer: ElementRenderer
-var sprite: Sprite2D
-
-# editor state
-var paint := Paint.WATER
-var paused := false
-var _last_info := ""  # last HUD text; skips label writes when unchanged
-
-## Build the grids and renderer, wire timer and signals, load demo F1.
-func _ready() -> void:
-	stone = GridStone.new(GRID_W, GRID_H)
-	water = GridWater.new(GRID_W, GRID_H, stone)
-	renderer = ElementRenderer.new(stone, water)
-	sprite = Sprite2D.new()
-	sprite.centered = false
-	sprite.texture = renderer.texture
-	sprite.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
-	add_child(sprite)
-	$TickTimer.timeout.connect(_on_tick)
-	water.levels_changed.connect(_on_levels_changed)
+## Load the U-tube demo on boot.
+func _setup() -> void:
 	_load_preset(KEY_F1)
 
-## Fixed-step heartbeat: dose held-mouse water, tick the sim, redraw.
-func _on_tick() -> void:
-	if paused:
-		return
-	# tick-driven painting keeps water doses deterministic
+## Tick-boundary dosing: held-mouse water in PAINT_DOSE units.
+func _dose() -> void:
 	if Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT) and paint == Paint.WATER:
 		var t := _hover_tile()
 		if t.x >= 0:
 			water.add_water(t.x, t.y, PAINT_DOSE)
-	water.tick()
-	renderer.redraw()
 
-## Track the hover tile; RMB erases, LMB lays stone; refresh the HUD.
-func _process(_delta: float) -> void:
-	var t := _hover_tile()
-	var dirty := t != renderer.hover
-	renderer.hover = t
-	# RMB erases both layers; LMB paints stone (water dosing happens on tick)
-	if t.x >= 0:
-		if Input.is_mouse_button_pressed(MOUSE_BUTTON_RIGHT):
-			water.set_water(t.x, t.y, 0)
-			stone.set_terrain(t.x, t.y, GridStone.Terrain.AIR)
-			dirty = true
-		elif Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT) and paint == Paint.STONE:
-			water.set_water(t.x, t.y, 0)
-			dirty = stone.set_terrain(t.x, t.y, GridStone.Terrain.STONE) or dirty
-	if dirty:
-		renderer.redraw()
-	_update_info(t)
+## Held strokes: RMB erases water and terrain; LMB lays stone over cleared water.
+func _paint_stroke(t: Vector2i) -> bool:
+	if Input.is_mouse_button_pressed(MOUSE_BUTTON_RIGHT):
+		water.set_water(t.x, t.y, 0)
+		stone.set_terrain(t.x, t.y, GridStone.Terrain.AIR)
+		return true
+	if Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT) and paint == Paint.STONE:
+		water.set_water(t.x, t.y, 0)
+		return stone.set_terrain(t.x, t.y, GridStone.Terrain.STONE)
+	return false
 
-## Hotkeys: F1-F6 presets, 1/2 material, SPC pause, T step, X clear, G debug, K tests.
-func _unhandled_key_input(event: InputEvent) -> void:
-	var key := event as InputEventKey
-	if key == null or not key.pressed or key.echo:
-		return
-	var k: int = key.keycode
+## Scene keys: F1-F6 presets, 1/2 material, K runs the water and packet suites.
+func _handle_key(k: int) -> bool:
 	if PRESETS.has(k):
 		_load_preset(k)
-		return
+		return true
 	match k:
 		KEY_1:
 			paint = Paint.STONE
 		KEY_2:
 			paint = Paint.WATER
-		KEY_SPACE:
-			paused = not paused
-		KEY_T:
-			if paused:
-				water.tick()
-				renderer.redraw()
-		KEY_X:
-			stone.clear()
-			water.clear()
-			renderer.redraw()
-		KEY_G:
-			renderer.debug = not renderer.debug
-			renderer.redraw()
 		KEY_K:
 			run_self_tests()
 			run_packet_tests()
+		_:
+			return false
+	return true
 
-## Tile under the mouse, or (-1, -1) when off the grid.
-func _hover_tile() -> Vector2i:
-	var p := get_global_mouse_position()
-	var t := Vector2i(floori(p.x / TILE), floori(p.y / TILE))
-	if t.x < 0 or t.y < 0 or t.x >= GRID_W or t.y >= GRID_H:
-		return Vector2i(-1, -1)
-	return t
-
-## Carve a diagram wrapped in a stone U-shell (open top); returns its origin.
-func _carve_preset(p_stone: GridStone, p_water: GridWater, rows: Array) -> Vector2i:
-	var first: String = rows[0]
-	var pw := first.length()
-	var ph := rows.size()
-	var ox := int((GRID_W - (pw + 2)) / 2.0)
-	var oy := GRID_H - (ph + 1)
-	for x in range(ox - 1, ox + pw + 1):
-		p_stone.set_terrain(x, oy + ph, GridStone.Terrain.STONE)
-	for y in range(oy, oy + ph):
-		p_stone.set_terrain(ox - 1, y, GridStone.Terrain.STONE)
-		p_stone.set_terrain(ox + pw, y, GridStone.Terrain.STONE)
-	for y in ph:
-		var row: String = rows[y]
-		for x in pw:
-			match row[x]:
-				"s":
-					p_stone.set_terrain(ox + x, oy + y, GridStone.Terrain.STONE)
-				"w":
-					p_water.set_water(ox + x, oy + y, 255)
-				_:
-					pass
-	return Vector2i(ox, oy)
+## Controls listing for the water sandbox.
+func _hint_header() -> String:
+	return "1 stone  2 water  LMB paint  RMB erase\nSPC pause  T step  X clear  G debug  K tests  F1-F6 demos\n"
 
 ## Reset both grids and carve the demo bound to a preset key.
 func _load_preset(keycode: int) -> void:
@@ -371,20 +289,3 @@ func _test(name: String, preset_key: int, check: Callable) -> void:
 		print("FAIL  %s — leaked %d units" % [name, t0 - t_water.total()])
 	else:
 		print("PASS  %s" % name)
-
-## Rebuild the HUD line (pause state, hover tile, band) when it changes.
-func _update_info(t: Vector2i) -> void:
-	var info := "PAUSED (T steps)" if paused else ""
-	if t.x >= 0:
-		var w := water.get_water(t.x, t.y)
-		var bands := ["DRY", "WET", "HALF", "FULL"]
-		if info != "":
-			info += "   "
-		info += "tile %d,%d   water %3d   lines %2d   %s" % [t.x, t.y, w, w >> 4, bands[water.get_level(t.x, t.y)]]
-	if info != _last_info:
-		_last_info = info
-		$UI/Hint.text = "1 stone  2 water  LMB paint  RMB erase\nSPC pause  T step  X clear  G debug  K tests  F1-F6 demos\n" + info
-
-## No-op: redraws already ride the tick; keeps the signal wiring visible.
-func _on_levels_changed(_cells) -> void:
-	pass

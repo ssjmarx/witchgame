@@ -45,6 +45,11 @@ const POOL_MAX := 255      # world §13 -- the tile budget
 const SUB_DISPLACE := 64   # world §13 -- each solid subtile displaces 64
 const NIBBLE_MAX := 15     # 4-bit occupancy
 
+# subtile kinds for get_sub/set_sub -- column order matches SUB_SINK
+const K_STONE := 0
+const K_SOIL := 1
+const K_ICE := 2
+
 # -- Columns -----------------------------------------------------------------
 
 var w: int
@@ -241,6 +246,18 @@ func mat_total(m: int) -> int:
 			for v in steam: sum += v
 	return sum
 
+## Fresh popcount recount of one subtile column (kind: K_STONE/K_SOIL/K_ICE) -- the mass checksum.
+func sub_total(kind: int) -> int:
+	var sum := 0
+	match kind:
+		K_STONE:
+			for v in stone_s: sum += POPCOUNT[v]
+		K_SOIL:
+			for v in soil_s: sum += POPCOUNT[v]
+		_:
+			for v in ice_s: sum += POPCOUNT[v]
+	return sum
+
 ## Double-entry check: booked totals vs fresh recounts, plus the per-tile pool constraint. Called at the end of every tick.
 func assert_all() -> bool:
 	var ok := true
@@ -265,6 +282,12 @@ func assert_all() -> bool:
 		push_error("ledger drift ICE_S: booked %d, counted %d" % [_booked[Led.ICE_S], s_ice])
 		ok = false
 	for i in w * h:
+		# the four subtile cells are a shared budget across solid kinds -- two kinds may never claim one cell
+		var overlap := POPCOUNT[stone_s[i]] + POPCOUNT[soil_s[i]] + POPCOUNT[ice_s[i]] - POPCOUNT[stone_s[i] | soil_s[i] | ice_s[i]]
+		if overlap != 0:
+			var q := xy_of(i)
+			push_error("subtile overlap at %d,%d" % [q.x, q.y])
+			ok = false
 		if pool_total(i) > pool_capacity(i):
 			var p := xy_of(i)
 			push_error("pool overflow at %d,%d: %d > %d" % [p.x, p.y, pool_total(i), pool_capacity(i)])

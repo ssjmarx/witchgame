@@ -13,6 +13,10 @@ const STONE_DARK    := Color("#4d5666")
 const WATER         := Color("#2f5fc0")
 const WATER_SURFACE := Color("#7ba4ec")
 
+# soil
+const SOIL 			:= Color8(122, 84, 52)
+const SOIL_LIP 		:= Color8(160, 116, 74)
+
 # editor overlays
 const GRID          := Color("#232b44")
 const CURSOR        := Color("#eef0f4")
