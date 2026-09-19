@@ -1,8 +1,19 @@
-# `world.md` — THE WORLD: Shared Engine & Simulation GDD v1.0
+# `world.md` — THE WORLD: Shared Engine & Simulation GDD v1.1
 
-*The foundation under both games. The witch doc and the magical girl doc are deltas on this one; where a game doc disagrees with this doc about engine behavior, this doc wins. Where this doc and the code disagree, the code wins — GridWater is already code, and the sim section below is written from it.*
+*The foundation under both games. The witch doc and the magical girl doc are deltas on this one; where a game doc disagrees with this doc about engine behavior, this doc wins. Where this doc and the code disagree, the code wins — `TilePacket`, `GridWater`, and `GridSand` are already code, and the shipped sections below are written from them.*
 
 **Scope.** This doc owns: the room model, the cellular automata, the bridge, the actor shell and contact contract, the enemy frame, the lasso core, doors, pockets, death and lives machinery, the rendering and light rig, the level format, and the generator/checker framework. The game docs own: verbs, aiming, rosters, rooms, economies, and presentation. One 10 Hz integer world that renders itself; two heroines who visit it at 60 fps through the same customs office.
+
+**Where the code stands** *(synced at `d199585`)*. Shipped and therefore authoritative: the packet and its ledger (§2 as shipped), the terrain/water/loose-solids trio — `GridStone`, `GridWater`, `GridSand` — (§3 water, displacement, flow export, soil/stone/ice), the renderer and palette (§9 lines marked *shipped*), and the `TestSandbox` harness with the water, packet, and soil acceptance suites. Not yet code: the room model, every rule marked *planned* (reactions, fire, gas, damp), the bridge (§4), the actor machinery (§5–§8), the light rig, and the level format (§10). Shipped prose names its source; planned prose is design-ahead-of-code and says so.
+
+**Changelog v1.1 — synced to code (`d199585`, "soil! solids!")**
+
+- **§2 rewritten from `TilePacket` as shipped:** ten structure-of-arrays columns (terrain, three subtile nibbles, six pool materials) plus a nine-row per-room ledger asserting every tick. FUEL, FIRE, DAMP, SURFACE, FLAGS are planned fields, arriving with fire and bridge work — they are not in the bytes today
+- **One loose-solids field, no LOOSE flag:** every stone/soil/ice subtile falls and slides (`GridSand`); the flag — static stone unless marked — is the planned refinement. New shipped rulings: soil sinks through water, stone sinks faster, ice rests buoyant (no rising yet — the float lab)
+- **Water rules updated from `GridWater`:** rise into headroom needs a full cell of head (RISE_MIN_DIFF 256) and escape-reachable headroom; top-up hysteresis PRESSURE_MIN_DIFF 2; a sub-line film (≤ 15) is air for pocket purposes; seek level moves one workable pair per run per tick; displacement ejects up the tile's own column, lightest material first, landing at the first free escape-reachable tile
+- **Rendering split shipped/planned:** line fills and crest, the soil squeeze lift, waterfall streaks, soil quads, and debug overlays are code; dithering, shimmer, palette banks, and the light rig are not. Sub-line films draw nothing by design; stone and ice subtiles are not yet drawn
+- Constants table split the same way: DIFFUSER_FLOW = 96 (was `<tune>`); FLOW_RATE = 3 retired — no such constant ever shipped; window 720×720; Godot 4.5
+- Coyote time, jump buffering, ledge tolerance moved to E3 — no actor code exists yet. The determinism rig stays planned: the shipped engine is PRNG-free (pass order + sweep parity), and render randomness is already hash-keyed
 
 **Changelog v1.0**
 
@@ -36,37 +47,35 @@ The laws. When in doubt, these decide.
 
 ## 1. Tech setup
 
-- Godot 4.x, GDScript. Viewport 240×240, window 960×960, stretch viewport, integer scaling, nearest filtering
-- Tiles: 16×16, each four 8×8 subtiles. Visible area 15×15
-- Element tick: fixed 10 Hz, integer only, deterministic. Render 60 fps; simulation never does
-- Rooms freeze when unobserved (the room containing the camera simulates). A one-room level is always live
-- Modern conveniences in: coyote time, jump buffering, ledge tolerance
-- **Performance discipline:** the CA runs in typed arrays (`PackedByteArray` and friends), zero allocations per tick, no GDScript in the hot loop. Actors ride Godot's C++ physics. Escape hatch: C#/GDExtension if profiling ever demands
+- Godot 4.5, GDScript. Viewport 240×240, window 720×720, stretch viewport, integer scaling, nearest filtering *(shipped — `project.godot`)*
+- Tiles: 16×16, each four 8×8 subtiles. Visible area 15×15 *(shipped — the harness runs one fixed 15×15 grid)*
+- Element tick: fixed 10 Hz, integer only, deterministic. Render 60 fps; simulation never does *(shipped — the sandbox timers tick at 0.1 s)*
+- Rooms freeze when unobserved (the room containing the camera simulates). A one-room level is always live *(planned — no room model yet; the harness is one grid, always live)*
+- Coyote time, jump buffering, ledge tolerance ride the actor shell *(planned — E3; no actor code exists)*
+- **Performance discipline:** the CA runs in typed packed arrays (`PackedByteArray` and friends) — that part is shipped. Allocation-free ticks and a native hot loop are targets, not current fact: today the whole engine is GDScript and a tick does allocate (level snapshots, per-run arrays). Actors will ride Godot's C++ physics. Escape hatch: C#/GDExtension if profiling ever demands
 - **Room size is an authoring decision, not a budget.** Small rooms mean tight challenges; big rooms mean lots of atoms. The GBC aesthetic is a style, not a hardware constraint. Profile the ceiling on target hardware once the engine is finished; grow from there. *(Open item.)*
-- **Determinism rig:** one `RandomNumberGenerator` per room, `seed = level_seed ⊕ room_id`. Derive the room's fixed tile permutation at load, then advance per tick. Actor order is a per-tick PRNG shuffle. Render effects key on (tile hash, tick count), never wall-clock, never the PRNG.
+- **Determinism rig:** one `RandomNumberGenerator` per room, `seed = level_seed ⊕ room_id`. Derive the room's fixed tile permutation at load, then advance per tick. Actor order is a per-tick PRNG shuffle. *(Planned — arrives with the stochastic rates of §4; the shipped engine is PRNG-free, deterministic by pass order and alternating sweep parity.)* Render effects key on (tile hash, tick count), never wall-clock, never the PRNG *(shipped — the streak hashes)*.
 
 ## 2. Data model
 
-**Per-tile packet** (~14 bytes/tile):
+**Per-tile packet — as shipped** (`TilePacket`): structure-of-arrays — one `PackedByteArray` column per field, one row per tile, the tile index is the row number. Ten bytes per tile, plus a nine-row per-room ledger:
 
 ```
 TERRAIN : AIR, STONE, WOOD, SOIL, BRAZIER, SPIKE, DOOR, DOOR_CLOSED
-STONE_S : 4-bit occupancy — carve/cast granularity (DOOR/BRAZIER/SPIKE never subtiled).
-		  LOOSE flag: loose subtiles run the soil move rules; solid stone stays static
+STONE_S : 4-bit occupancy — carve/cast granularity; every subtile column is loose in the
+		  current engine — the LOOSE flag (static unless marked) is the planned refinement
 SOIL_S  : 4-bit occupancy — the nibble IS the matter (popcount = mass)
-ICE_S   : 4-bit occupancy — 32 water ⇄ 1 subtile, displaces 64
-FUEL    : 0–255, attached to solids (vine 60, wood 255, coal 255)     — outside the pool
-FIRE    : 0–255, burning state (requires open air)                    — outside the pool
+ICE_S   : 4-bit occupancy — displaces 64; the 32-water freeze/thaw exchange is planned
 WATER, OIL, ACID, LAVA, SMOKE, STEAM : each 0–255 — the content pool
-DAMP    : 0–255, held by solids (64 capacity per soil subtile)        — outside the pool
-SURFACE : NONE, MOSS, VINE, COAL, SLIME, GLAZE
-FLAGS   : COLD, LIT, SCORCHED, structural
+LEDGER  : nine rows — six materials plus three subtile kinds; double-entry, asserted every tick
 FLOW    : exported per tile per tick (direction + strength) — derived, not matter
 ```
 
-**The content pool.** Water, oil, acid, lava, smoke, and steam are separate 0–255 fields sharing one budget: their total in a tile never exceeds 255, reduced 64 per solid subtile. Mixtures are allowed and render layered by density — heaviest at the bottom, gas on top. Reactant pairs sharing a tile resolve immediately per the reaction matrix; non-reactants layer and stay. DAMP, FUEL, and FIRE belong to solids and live outside the pool. Overflow is ejected through the displacement rule, never destroyed. Gas thresholds rescale to 0–255 density.
+**Planned fields — none in the bytes today;** they arrive with fire and the bridge: FUEL (0–255, attached to solids — vine 60, wood 255, coal 255), FIRE (0–255, burning state, requires open air), DAMP (0–255, held by solids — 64 capacity per soil subtile), SURFACE (NONE, MOSS, VINE, COAL, SLIME, GLAZE), FLAGS (COLD, LIT, SCORCHED, structural).
 
-**The actor state block.** Every actor — heroine, enemy, pot, thrown ball — carries:
+**The content pool.** Water, oil, acid, lava, smoke, and steam are separate 0–255 fields sharing one budget: their total in a tile never exceeds 255, reduced 64 per solid subtile of any kind — and only AIR and SOIL terrain holds a pool at all; every other terrain value is a full solid, capacity 0. Mixtures are allowed; an over-budget tile ejects through the displacement rule — lightest material first, never destroyed. The density table is shipped (water 30, oil 20, acid 40, lava 50, smoke 10, steam 5 — the rest stack, heaviest at the bottom, gas on top) and drives lightest-first ejection today; the sort ruling is tabled as well (SORT_RATE, units per tick toward the rest layer — steam out-climbs acid's sink 8:1) though no sort pass consumes it yet; the reaction matrix and the layering render are planned. DAMP, FUEL, and FIRE belong to solids and live outside the pool. Gas thresholds rescale to 0–255 density.
+
+**The actor state block** *(planned — no actors yet)*. Every actor — heroine, enemy, pot, thrown ball — carries:
 
 ```
 heat      : 0–255                 # thermal currency; actor-layer only
@@ -80,20 +89,34 @@ holdings  : pot contents, held-enemy refs — ledger-visible
 
 Heroes are 16×32 and span two tiles; every thermal operation picks one overlapped tile per tick via the PRNG (drip target, absorb source, boil site, steam emission). Underfoot operations (DRY, MELT) target the supporting tiles.
 
-**The smolder overlay.** A runtime per-fuel-tile timer, not packet data. Room resets clear it; snapshots don't carry it.
+**The smolder overlay** *(planned)*. A runtime per-fuel-tile timer, not packet data. Room resets clear it; snapshots don't carry it.
 
 **Room record:** baseline / saved bytes / saved enemies / tagged / enemy_baseline, plus held-enemy exclusion marks — captured enemies are out of the baseline; nothing duplicates across a door.
 
-**Conservation ledger.** One row per material (WATER; DAMP at 2:1; SOIL subtile; STONE subtile; OIL; ACID; LAVA at 64:1; ICE subtile at 32:1; SMOKE; STEAM), reactions as balanced integer transfers, plus: **boundary-flux** (exteriors, waterfalls, rain), **pocket-loss** (sanctioned destruction — the ledger calls it fine), **fauna flux** (spawn-stream entries and exits, booked like rain), and **actor holdings** — wetness at 2:1 water-equivalent, pot interiors, held enemies — attached and detached as flux, transferred at doors. Asserted every tick alongside the pool constraint (Σ content ≤ capacity). A drift is a bug.
+**Conservation ledger.** The shipped core is `TilePacket`'s nine rows — the six pool materials plus SOIL/STONE/ICE subtiles — asserted every tick alongside the per-tile pool constraint (Σ content ≤ capacity, no two subtile kinds claiming one cell); a drift is a bug. Planned rows and books extend it: DAMP at 2:1, LAVA at 64:1, ICE at 32:1, reactions as balanced integer transfers, plus **boundary-flux** (exteriors, waterfalls, rain), **pocket-loss** (sanctioned destruction — the ledger calls it fine), **fauna flux** (spawn-stream entries and exits, booked like rain), and **actor holdings** — wetness at 2:1 water-equivalent, pot interiors, held enemies — attached and detached as flux, transferred at doors.
 
 ## 3. Element simulation
 
+The shipped tick — one room, fixed order. The ruling is **solids before liquids**: sand's repack deficits are resolved by water's displacement pass the same tick, and water's tick owns the packet assert.
+
 ```gdscript
-func element_tick(room):
+# shipped today — the harness calls exactly this, in this order:
+sand.tick()    # GridSand: expand the packet nibbles -> subtile pass, bottom-up,
+               #   alternating sweep -> repack (popcount deltas booked)
+water.tick()   # GridWater: flow export reset -> level snapshot -> analyze (bodies,
+               #   regions, escape) -> displacement pass -> cell pass (FALL, POUR,
+               #   CREEP) -> seek level -> volume + ledger asserts -> levels_changed
+```
+
+The full build adds the passes below — every one *planned, none in code today*. Order stays a ruling: work orders at the head (bridge in, matter out), matter next, render last and never coupled. **Every rule in this doc is integer-only, deterministic, and free of the render clock.**
+
+```gdscript
+func element_tick(room):               # the full engine, once built
     var order = room.permutation        # fixed, derived from the room PRNG at load
     _apply_work_orders()               # THE BRIDGE — buffered actor orders,
                                       # tile order, then per-tick PRNG actor shuffle
-    for idx in order: _liquid_pass(idx) # water (GridWater), oil, acid, lava, subtile solids
+    _sand_pass(order)                  # loose subtiles first (GridSand, shipped above)
+    _liquid_pass(order)                # liquids next (GridWater, shipped above): oil, acid, lava
     _seek_level(); _export_flow()
     for idx in order: _fire_pass(idx)
     for idx in order: _gas_pass(idx)
@@ -103,41 +126,43 @@ func element_tick(room):
     ledger.assert_all()                # materials + pool + per-actor heat and wetness
 ```
 
-**Water — GridWater is authoritative.** Built and tested; where this document and the code diverge, the code wins. Rules as shipped: FALL (exclusive, instant; water/air swaps are how bubbles rise — one cell per tick, columns fall coherently), POUR (over lips into dry space only, corner-safe, air-gated), CREEP (half-difference into dry space, gated), SEEK LEVEL (each horizontal run is one incompressible conduit; columns trade volume surface-to-surface until heads match, at PRESSURE_RATE per run-row; a full capped column between them is a rigid pipe). Invariant: every move downhill-or-level; Σ(water × height) never increases. Air is gated, not simulated. Determinism: alternating sweep per tick; the escape flood is an order-independent monotone fixpoint. Scan-order guarantee: each cell's pass runs once per tick; vertical moves only deposit into already-scanned rows; lateral CREEP cascades are convergent and intended. Pool-aware capacity: arriving water competes with resident oil and gas for the budget; overflow displaces per the rule below.
+**Water — GridWater is authoritative.** Built and tested; where this document and the code diverge, the code wins. Rules as shipped: FALL (exclusive, instant — everything that fits goes one tile down; columns fall coherently), POUR (over lips into dry space only — the target below one line — corner-safe, air-gated), CREEP (half-difference into dry space, gated), SEEK LEVEL (each horizontal run is one incompressible conduit; per run per tick, the first workable pair trades volume surface-to-surface — up to PRESSURE_RATE, capped by half the head difference and both sides' room; heads within PRESSURE_MIN_DIFF rest; rising into headroom above the receiver's surface needs a full cell of head advantage — RISE_MIN_DIFF — and headroom escape-reachable up the column; a full capped column between them is a rigid pipe). Invariant: every move downhill-or-level; Σ(water × height) never increases. Air is gated, not simulated — never stored, never swapped: each tick's analyze pass marks which air can reach open sky (escape) and which pocket it belongs to, and the gates rule on those marks — (a) escape to open sky, (c) the donor's own receding headspace, (d) rotation (pocket and body also touch higher up) — with sub-line films (≤ AIR_PASSABLE_MAX) passing freely as same-pocket shuffles. Determinism: alternating sweep per tick; the escape flood is an order-independent monotone fixpoint. Scan-order guarantee: each cell's pass runs once per tick; vertical moves only deposit into already-scanned rows; lateral CREEP cascades are convergent and intended. Pool-aware capacity: arriving water competes with resident oil and gas for the budget; overflow displaces per the rule below.
 
-*Known approximations (accepted):* region labels one tick stale; donor headspace freely expandable; divided vessels can rest one line off level. *Planned patch:* small-diff rises into headroom escaped-to-sky (invariant permits diff ≥ water[above] + 2; keep the strict gate for pocketed headroom).
+*Known approximations (accepted):* region labels one tick stale; donor headspace freely expandable; divided vessels can rest one line off level. *Shipped since that note was written:* rises into headroom escaped-to-sky exist — at the strict setting, a full cell of head advantage (RISE_MIN_DIFF 256), escape-gated up the receiving column; pocketed headroom keeps the strict gate.
 
-**Displacement.** A solid subtile reduces the tile's pool capacity by 64; four subtiles is fully solid. When capacity drops below current content, the excess ejects through normal flow rules. Matter is displaced, never destroyed.
+**Displacement** *(shipped — rule five, `GridWater._displacement_pass`)*. A solid subtile reduces the tile's pool capacity by 64; four subtiles is fully solid. When capacity drops below current content, the excess ejects up its own column — solids sink, liquid climbs — depositing at the first free, escape-reachable tiles, **lightest material first** (steam before smoke before oil before water). Leftover excess persists to the next tick; the entry gates (the sand rules' landing check) should have prevented it. Matter is displaced, never destroyed.
 
-**Flow export.** Per tile per tick, direction + strength, from instrumented moves. Gameplay: pushes actors and loose objects (capped vs. walk speed). Rendering: deltas drive waterfalls and splash. A tile with water-in-transit above **DIFFUSER_FLOW** is a *diffuser* — the engine exports the condition; consumers are game-side (the witch's beam cannot pass one).
+**Flow export** *(shipped — `GridWater`'s flow fields, rebuilt wholesale every tick)*. Per tile per tick: total units arriving (strength) plus the dominant arrival's direction — eight ways, first stamp wins ties. Gameplay *(planned consumers)*: pushes actors and loose objects (capped vs. walk speed). Rendering *(shipped consumer)*: strong downward flow draws waterfall streaks (above **FLOW_STREAK**). A tile with water-in-transit above **DIFFUSER_FLOW** is a *diffuser* — the condition is exported (the constant ships; consumers are game-side — the witch's beam cannot pass one). Consumers also read coarse level bands — DRY / WET / HALF / FULL — off `levels_changed`; fine units stay internal.
 
-**Soil (subtiles).** 4-bit occupancy; popcount is matter, Σ popcount asserted. All sixteen shapes representable — transient shapes during falls and slides are the animation. Stability is what the rules produce, not a stored constraint. Moves: fall if below empty; slide diagonally if the diagonal-below is empty and the side is clear (corner rule); repose emerges — settled neighbors differ by ≤ ~1 subtile; piles are 8px staircases. 8px is a hop, never an auto-step. Moisture is mortar: saturated subtiles don't slide; fire drying a wet slope triggers a landslide (buries fire, spikes, enemies). Damp accounting: capacity 64 per soil subtile; arriving water splits half-flows / half-absorbs (integer halves; remainders flow); exchange 2 damp per 1 water, integer-only; damp percolates downward through saturated soil. A full water tile over full soil soaks to ~127 water with the soil saturated. Render: darken the top ⌈damp/64⌉ subtiles — the creeping front.
+**Soil (subtiles)** *(shipped — `GridSand`, ST1–ST6)*. 4-bit occupancy; popcount is matter, Σ popcount asserted every tick by the ledger's SOIL_S row. All sixteen shapes representable — transient shapes during falls and slides are the animation. Stability is what the rules produce, not a stored constraint. Moves as shipped: fall if below empty — one subtile per tick through air, gated single-cell sub-steps so nothing tunnels; through liquid, sink at the material's SUB_SINK rate (soil 1, stone 2, ice −1 = buoyant, rests — rising is the float lab, not yet code); slide diagonally if the diagonal-below is empty and the side is clear (corner rule); repose emerges — settled neighbors differ by ≤ ~1 subtile; piles are 8px staircases. 8px is a hop, never an auto-step. A landing subtile must find the tile enterable: terrain that holds a pool, and either the budget fits (255 − 64 per subtile) or the displaced liquid has escape-reachable headroom up the column (air-gate family). Soil sinks through water and the water closes in above it (ST4); a sealed basin exchanges soil for water exactly, one subtile per 64 (ST5); a sealed column refuses the exchange outright (ST6). *Planned (Lab E):* moisture is mortar — saturated subtiles don't slide; fire drying a wet slope triggers a landslide (buries fire, spikes, enemies). Damp accounting: capacity 64 per soil subtile; arriving water splits half-flows / half-absorbs (integer halves; remainders flow); exchange 2 damp per 1 water, integer-only; damp percolates downward through saturated soil. A full water tile over full soil soaks to ~127 water with the soil saturated. Render: darken the top ⌈damp/64⌉ subtiles — the creeping front.
 
-**Stone subtiles.** Static occupancy — unless flagged **LOOSE**, in which case they run the soil move rules (fall, corner-rule slide) and pile by them. Carved by acid (64 acid destroys one subtile), cast by lava (64 lava + water → one subtile + steam). Wood is carved at fuel granularity. Doors never carve. Glaze is immune. The ledger conserves STONE subtile count across solid and loose states; shatter moves matter, never deletes it.
+**Stone subtiles** *(shipped loose — `GridSand`; the flag is planned)*. In the current engine every stone subtile runs the sand rules — fall, corner-rule slide, sink at SUB_SINK 2 — and piles by them; there is no LOOSE flag yet. The plan keeps the flag as a refinement: static occupancy unless marked **LOOSE**. Carved by acid (64 acid destroys one subtile), cast by lava (64 lava + water → one subtile + steam) — both reactions planned. Wood is carved at fuel granularity. Doors never carve. Glaze is immune. The ledger conserves STONE subtile count across solid and loose states (the STONE_S row books every popcount delta); shatter moves matter, never deletes it.
 
-**Oil.** Pool liquid, fuel 255. Density rule owned by the oil — oil with water above swaps down; within a tile they layer. Burning oil travels the float layer and self-limits as it consumes. The one sanctioned fire that swims. **Oil grants no wetness** — an actor in oil neither soaks nor dries, but a HOT actor standing in it is standing in fuel (§4.4).
+*From here through the reaction matrix: design ahead of code. The packet hosts the pool columns and the density/sort tables, and the displacement pass will eject any of them — but no rules, reactions, or renders exist for these materials yet.*
 
-**Acid.** Pool liquid. 64 acid dissolves one subtile of stone or soil (or 64 fuel of wood), consuming itself. Acid decays and is purged below 64. Deliberately unlike water, which is conserved forever.
+**Oil** *(column shipped; rules planned)*. Pool liquid, fuel 255. Density rule owned by the oil — oil with water above swaps down; within a tile they layer. Burning oil travels the float layer and self-limits as it consumes. The one sanctioned fire that swims. **Oil grants no wetness** — an actor in oil neither soaks nor dries, but a HOT actor standing in it is standing in fuel (§4.4).
 
-**Ice.** Subtile solid. 32 water freeze into one subtile; one subtile displaces 64 pool capacity — freezing expands. The freeze check requires the displaced material somewhere to go (air-gate family). Ice floats: submerged ice migrates up a subtile per tick; water above ice swaps down; ice freezing under existing ice pushes it up. Thaw returns 32 water per subtile. **Heat-melt** (§4.2): ice under a hot actor's feet thaws at MELT_RATE, 1 heat per water, billed through the bridge — the CA reaction, not an aura. Snow (post-slice) uses the same reaction.
+**Acid** *(column shipped; rules planned)*. Pool liquid. 64 acid dissolves one subtile of stone or soil (or 64 fuel of wood), consuming itself. Acid decays and is purged below 64. Deliberately unlike water, which is conserved forever.
 
-**Lava.** Stone that forgot it's solid. Pool liquid, slow; ignites fuel on contact; water contact casts one stone subtile per 64 lava and makes steam. Fire as masonry.
+**Ice** *(column shipped — `GridSand`; every reaction planned)*. Subtile solid; one subtile displaces 64 pool capacity. Buoyancy is shipped as rest: SUB_SINK −1, submerged ice does not sink — and does not rise either; rising is the float lab. *Planned:* 32 water freeze into one subtile — freezing expands; the freeze check requires the displaced material somewhere to go (air-gate family); submerged ice migrates up a subtile per tick; water above ice swaps down; ice freezing under existing ice pushes it up. Thaw returns 32 water per subtile. **Heat-melt** (§4.2): ice under a hot actor's feet thaws at MELT_RATE, 1 heat per water, billed through the bridge — the CA reaction, not an aura. Snow (post-slice) uses the same reaction.
 
-**Glaze.** Sustained fire on a soil surface vitrifies it. Opaque, acid-proof. The counter-material: acid digs, glaze routes.
+**Lava** *(column shipped; rules planned)*. Stone that forgot it's solid. Pool liquid, slow; ignites fuel on contact; water contact casts one stone subtile per 64 lava and makes steam. Fire as masonry.
 
-**Fire.** A burning tile requires open air — pool capacity minus water and solid subtiles ≥ 16. Less smothers (steam wisp if water). The universal snuff: drown it or bury it. Loose fuel obeys buoyancy: heavies sink after a beat afloat; burning fuel on water burns one beat, boils a little water, sinks, snuffs. Spread: orthogonal, free; wind ember-leaps one gap downwind. Damp siege: drain 4/tick, steam. Fuel 0 → out (WOOD → AIR: arson is level editing; else SCORCHED). **Ignition by heat — as opposed to open flame — always goes through smolder (§4.4).** Open CA fire spreads with no warning: it is already matter.
+**Glaze** *(planned)*. Sustained fire on a soil surface vitrifies it. Opaque, acid-proof. The counter-material: acid digs, glaze routes.
 
-**Gas.** Smoke and steam, each 0–255 in the pool. Smoke rises and pools under ceilings, advects downwind (draft fields are authored wind — *wind system TBD, open item*). Steam rises, spreads along the ceiling, and condenses off cool stone as slow drizzle — the enclosed water cycle.
+**Fire** *(planned)*. A burning tile requires open air — pool capacity minus water and solid subtiles ≥ 16. Less smothers (steam wisp if water). The universal snuff: drown it or bury it. Loose fuel obeys buoyancy: heavies sink after a beat afloat; burning fuel on water burns one beat, boils a little water, sinks, snuffs. Spread: orthogonal, free; wind ember-leaps one gap downwind. Damp siege: drain 4/tick, steam. Fuel 0 → out (WOOD → AIR: arson is level editing; else SCORCHED). **Ignition by heat — as opposed to open flame — always goes through smolder (§4.4).** Open CA fire spreads with no warning: it is already matter.
 
-**Rain.** Exterior rooms expose open-sky columns; exposed tiles gain water per tick; wind slants it; water leaving the map is boundary flux.
+**Gas** *(columns shipped; rules planned)*. Smoke and steam, each 0–255 in the pool. Smoke rises and pools under ceilings, advects downwind (draft fields are authored wind — *wind system TBD, open item*). Steam rises, spreads along the ceiling, and condenses off cool stone as slow drizzle — the enclosed water cycle.
 
-**Electricity** exists only as conductive bodies. A spark is a flood through a connected wet body — the sim's own body graph. Wet paths are wires.
+**Rain** *(planned)*. Exterior rooms expose open-sky columns; exposed tiles gain water per tick; wind slants it; water leaving the map is boundary flux.
 
-**Botanical triggers** (the sensor family — no tech in these worlds, forest spirits only): gate-fungus (wet contact), pitcher plant (level switch), snap-grass (flow switch), scorch-bloom (fire contact). Field state, queryable by level logic.
+**Electricity** *(planned)* exists only as conductive bodies. A spark is a flood through a connected wet body — the sim's own body graph. Wet paths are wires.
 
-**Body-state subsystem.** Per-body quality flags for connected like-material bodies — water: poisoned, tainted, holy; soil: fertile or not. Quality, not phase: water, steam, and ice are three distinct elements with phase-change rules, never tags on one body. Potential system.
+**Botanical triggers** *(planned)* (the sensor family — no tech in these worlds, forest spirits only): gate-fungus (wet contact), pitcher plant (level switch), snap-grass (flow switch), scorch-bloom (fire contact). Field state, queryable by level logic.
 
-**Reaction matrix** (every cell is a puzzle verb):
+**Body-state subsystem** *(potential, planned)*. Per-body quality flags for connected like-material bodies — water: poisoned, tainted, holy; soil: fertile or not. Quality, not phase: water, steam, and ice are three distinct elements with phase-change rules, never tags on one body. Potential system.
+
+**Reaction matrix** *(planned — every cell is a puzzle verb)*:
 
 | | |
 |---|---|
@@ -254,21 +279,23 @@ Previews are twinkling dotted lines (random phase per dot, hash-based). Per-game
 
 ## 9. Rendering and light
 
-One `Image` the size of the room, 10 Hz, `ImageTexture`, under actors. The sim state is the picture; debugging is looking at the room. All physical state stays in GBC bounds.
+One `Image` the size of the room, redrawn once per tick, pushed through an `ImageTexture`, drawn under actors *(shipped — `ElementRenderer`)*. The sim state is the picture; debugging is looking at the room. All physical state stays in GBC bounds.
 
-**Palette bank:** eight rows × four colors for the whole screen. Sprites authored 2-bit grayscale, baked through the Palette module — field and sprite colors can never drift. Rows are conditions; per-room remaps tint the bank while semantic slots stay pinned. Heroine eyes: two 1×2 unshaded pixels on a canvas layer above the CanvasModulate — cartoon law, per-game color.
+**Shipped render** (`ElementRenderer` + `Palette`): beveled stone; water drawn as visible lines — units >> 4, one LINE per line — with a surface crest on the surface tile, covered tiles filling solid, and **sub-line films (< 16 units) drawing nothing by design**; the waterline lifts over the tile's own soil subtiles — a squeezed pool reads higher (both bottom subtiles +4 flat, doubled and capped +6 when a top slot is also filled; one bottom subtile doubles the lines, capped +2, or +4 with a top slot; clamped at 15); waterfall streaks replace the fill on strong downward flow (above FLOW_STREAK 48 — hash-keyed on tile + tick, never a PRNG); soil subtiles as 8×8 quads with a lit lip where uncovered — stone and ice subtiles are *not yet drawn*; the debug overlay (G) tints sealed vs vented air, draws per-segment level lines, flow arrows, the tile grid, and the hover cursor. The palette is one constants class today — base, water, soil, editor and debug colors — swapped for the bank below when real art starts.
 
-- Water: fill fraction, dithered below 64; films above soil's low surface; 60 fps shimmer over 10 Hz steps (the period-authentic split)
-- Mixtures render layered by density within a tile
-- Subtile solids: 8×8 quads — terrain editing at hardware-tile resolution
-- Damp front: top ⌈damp/64⌉ subtiles darken; percolation is visible
-- Gas: Bayer dither by density. Fire: 3-frame palette cycle. Scorch: permanent dark flag
-- Derived animation, all in palette-and-dither language: splash disturbance decays per tick (a restored room comes back calm); waterfalls are streaks on high downward flow — the renderer reads the flow field; spray and waves keyed on (tile hash, tick count)
-- Growth: four blips over four seconds; blip one shows roots toward the chosen target
-- Smolder: the four-second mirror animation
-- Dotted previews: twinkling, stateful line colors
+**Palette bank** *(planned)*: eight rows × four colors for the whole screen. Sprites authored 2-bit grayscale, baked through the Palette module — field and sprite colors can never drift. Rows are conditions; per-room remaps tint the bank while semantic slots stay pinned. Heroine eyes: two 1×2 unshaded pixels on a canvas layer above the CanvasModulate — cartoon law, per-game color.
 
-**Light rig (mechanics engine, assignments game-side):** CanvasModulate ambient, omni supports, focus cones with occluder polylines regenerated on tile and subtile changes, LIT mask by visibility-checked fan, dithered gradient textures. **Scene lighting profiles** per room: ambient level, firelight toggle (the witch's rooms run near-black blue with a fire-light pool of 6 — arson as illumination; firelight is a witch ability, off for the magical girl). Heroines may radiate — the witch's lantern, the magical girl's indoor self-glow at lantern radius (a full screen). Radiance is magic; what it does to steam and shadows is the rig's business.
+- Water *(planned beyond the shipped lines)*: dithered films below one line; 60 fps shimmer over 10 Hz steps (the period-authentic split)
+- Mixtures render layered by density within a tile *(planned)*
+- Subtile solids: 8×8 quads — terrain editing at hardware-tile resolution *(shipped for soil; stone and ice pending)*
+- Damp front: top ⌈damp/64⌉ subtiles darken; percolation is visible *(planned)*
+- Gas: Bayer dither by density. Fire: 3-frame palette cycle. Scorch: permanent dark flag *(planned)*
+- Derived animation, all in palette-and-dither language: splash disturbance decays per tick (a restored room comes back calm); waterfalls are streaks on high downward flow — the renderer reads the flow field *(shipped)*; spray and waves keyed on (tile hash, tick count) *(planned)*
+- Growth: four blips over four seconds; blip one shows roots toward the chosen target *(planned)*
+- Smolder: the four-second mirror animation *(planned)*
+- Dotted previews: twinkling, stateful line colors *(planned)*
+
+**Light rig (mechanics engine, assignments game-side)** *(planned — E5)*: CanvasModulate ambient, omni supports, focus cones with occluder polylines regenerated on tile and subtile changes, LIT mask by visibility-checked fan, dithered gradient textures. **Scene lighting profiles** per room: ambient level, firelight toggle (the witch's rooms run near-black blue with a fire-light pool of 6 — arson as illumination; firelight is a witch ability, off for the magical girl). Heroines may radiate — the witch's lantern, the magical girl's indoor self-glow at lantern radius (a full screen). Radiance is magic; what it does to steam and shadows is the rig's business.
 
 ## 10. Level format and generators
 
@@ -300,18 +327,20 @@ Generator notes: run several that disagree — maze output as topology for large
 
 ## 11. Build order — the engine substrate
 
-- **E0 — World:** packet, room, ledger, the render Image. Soak tests green, asserts hold over long runs
-- **E1 — Water:** GridWater + flow export + displacement (authoritative)
-- **E2 — Matter:** soil/stone subtiles + LOOSE, oil, acid, lava, ice, glaze, the reaction matrix, freeze/thaw
-- **E3 — Actors:** the shell, contact contract, trajectory ring, lasso core, stun/capture, thrown profiles, pots as actors
-- **E4 — Bridge:** thermal exchanges, smolder, door protocol, pockets, per-actor ledgers
-- **E5 — Light:** rig, profiles, palette module
+*Status at `d199585`:* E0 and E1 are code; E2 is half code; E3–E5 not started. The shipped test harness is `TestSandbox` plus the water and soil scenes — a 10 Hz timer, F1–F7 diagram presets carved into the 15×15 grid, K runs the acceptance suites headlessly (six water examples, four packet unit tests, six soil examples, 3000 ticks to equilibrium) — the precursor of §10's vignette rig.
+
+- **E0 — World:** packet, ledger, the render Image — **shipped** (`TilePacket`, `ElementRenderer`; asserts hold over long runs). The room model is not: one fixed grid, no `RoomSpec`, no freezing
+- **E1 — Water:** **shipped** — GridWater + flow export + displacement (authoritative), acceptance-tested
+- **E2 — Matter:** **half shipped** — soil/stone/ice subtiles are code (`GridSand`: one loose-solids field, no LOOSE flag; soil sinks, stone sinks faster, ice rests); oil, acid, lava, glaze columns exist in the packet without rules; the reaction matrix, freeze/thaw, and damp are design
+- **E3 — Actors:** the shell, contact contract, trajectory ring, lasso core, stun/capture, thrown profiles, pots as actors — not started
+- **E4 — Bridge:** thermal exchanges, smolder, door protocol, pockets, per-actor ledgers — not started
+- **E5 — Light:** rig, profiles, palette module — not started
 
 The witch's M0–M2.5 map onto E0–E2 + E5; her later milestones build on E3/E4. The magical girl builds almost entirely on E3/E4 — her combat *is* modules on this substrate.
 
 ## 12. Engine exit checklist
 
-- Soak test: minutes of random-input simulation, ledger green, zero drift, no float in the CA — assert it
+- Soak test: minutes of random-input simulation, ledger green, zero drift, no float in the CA — assert it *(the ledger and volume asserts run every tick in code today; the minutes-long soak rig is pending)*
 - Same seed → identical replay (per-tick state hash; PRNG advanced only in the tick)
 - The steam bomb self-caps: 255 heat in a full tile → 255 steam in one tile, no overflow, budget-neutral by construction
 - Heat and wetness ledgers assert per actor; a hot body entering water cools by exactly the water it boiled
@@ -325,11 +354,27 @@ The witch's M0–M2.5 map onto E0–E2 + E5; her later milestones build on E3/E4
 ## 13. Tuning constants
 
 ```
+# ── shipped — constants in code today ──────────────────────────────
 TILE = 16, SUBTILE = 8               # SACRED — the subtile is the hardware tile
+TICK = 10 Hz                         # sim; render 60, never coupled
+POOL = 255 per tile, −64 per solid subtile (any kind)
+LINE = 16                            # SACRED — water units per visible scanline
+AIR_PASSABLE_MAX = 15                # a sub-line film is air for pocket purposes
+CELL_UNITS = 256                     # height units per tile, for head math
+PRESSURE_RATE = 64                   # per run-row transfer, capped by half the head diff
+PRESSURE_MIN_DIFF = 2                # top-up hysteresis (head units)
+RISE_MIN_DIFF = 256                  # overflow-up needs a full cell of head advantage
+DIFFUSER_FLOW = 96                   # flow_mag above this marks a diffuser
+FLOW_STREAK = 48                     # downward flow above this draws waterfall streaks
+DENSITY: water 30 · oil 20 · acid 40 · lava 50 · smoke 10 · steam 5
+SORT_RATE: 2/2/1/1/3/8               # toward the rest layer; steam out-climbs acid 8:1
+SAND_FALL = 1 subtile/tick           # all kinds, through air
+SUB_SINK: stone 2 · soil 1 · ice −1  # through liquid; ice rests (no rising yet)
+TEST_TICKS = 3000                    # acceptance runs to equilibrium
+
+# ── planned — not yet code (E2 reactions, E3 actors, E4 bridge) ────
 JUMP_HEIGHT = 10                     # SACRED — both girls, identical legs
 GRAVITY = 480, JUMP_V = 98           # sqrt(2·g·h), h = 10
-TICK = 10 Hz                         # sim; render 60, never coupled
-POOL = 255 per tile, −64 per solid subtile
 SOIL_SUB = 64 units, DAMP 2:1        # integer quanta only
 ACID_SUB = 64, purge below 64        # acid is not conserved; water is
 LAVA_SUB = 64, ICE_SUB = 32 water (displaces 64)
@@ -346,9 +391,8 @@ CONTACT: FIRE +4/t, LAVA +8/t
 SMOLDER = 4 s build · 0.5 s hold · 2× decay · wet/bury resets
 STUN = 10 s flat · LASSO_RANGE = 7 · SNATCH = 0.15 s · GENTLE_DROP ≤ 1.5 tiles
 SWIM_GRAV = 120 · WADE = half speed at ≥128 liquid
-FLOW_RATE = 3, PRESSURE_RATE = 64
-DIFFUSER_FLOW = <tune>
 LIVES = 3 · 0 → level reset
+# retired: FLOW_RATE = 3 — never shipped; flow speeds are the rule formulas above
 ```
 
 ## Appendix A — supersessions (what this doc retires)
@@ -376,7 +420,7 @@ LIVES = 3 · 0 → level reset
 - **Bridge ordering:** orders at tick head, tile order, PRNG actor shuffle. The matter ledger catches ejection bugs; the per-actor ledgers catch thermal drift. Both assert every tick
 - **The instant tier:** min(heat, water) in one tick must stay budget-neutral — steam replaces water in the pool by construction; assert it, because this is the steam bomb
 - **Multi-tile actors:** one PRNG'd tile pick per operation; mixed-tile heroine states resolve stochastically — accepted lumpiness, deterministic because seeded
-- **LOOSE_STONE:** soil rules on stone subtiles; Σ popcount extends to STONE; shatter-into-water must eject by flow, never vanish
+- **LOOSE_STONE:** soil rules on stone subtiles — shipped exactly so in `GridSand` (every subtile is loose today; the flag is the planned refinement); Σ popcount extends to STONE; shatter-into-water must eject by flow, never vanish
 - **Pockets as trigger volumes:** nothing may push a heroine in unwarned — the aura is the promise; review any FLOW source aimed at a pocket mouth
 - **Smolder edges:** the 0.5 s hold exists for bouncing contacts; decay must not negative-clip; wet-fizzle on completion must reset cleanly
 - **Room-size ceiling:** open item — profile after E-complete; the 112×15 strip is the current largest authored room; target 4× headroom

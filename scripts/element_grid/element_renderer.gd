@@ -1,4 +1,4 @@
-## GDD §3: one Image the size of the map, regenerated at tick rate, pushed
+## world.md §9: one Image the size of the map, regenerated at tick rate, pushed
 ## through an ImageTexture, drawn under actors. The sim state *is* the picture.
 ## Regenerating 240×240 RGBA ten times a second is nothing — keep it dumb.
 

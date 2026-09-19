@@ -1,6 +1,6 @@
 # MAGICAL GIRL DEMO — Vertical Slice GDD v2.0
 
-*Delta doc on `world.md` v1.0 — shared engine, shared enemy IP, different verbs. Sibling of `witchgame.md` v3.0. Engine deltas: **none.** The strip, the bridge, LOOSE_STONE, the pockets — all engine now. This doc owns verbs, aiming, roster, rooms, and prizes.*
+*Delta doc on `world.md` v1.1 — shared engine, shared enemy IP, different verbs. Sibling of `witchgame.md` v3.0. Engine deltas: **none.** The strip, the bridge, LOOSE_STONE, the pockets — all engine now. This doc owns verbs, aiming, roster, rooms, and prizes.*
 
 **Goal:** one continuous-scroll strip of seven reaches plus three single-screen shrines where every verb — grab, throw, swoosh, band, pip, pocket, vent, boil — is operational with placeholder art. If this slice is fun with gray boxes, the game exists.
 
@@ -43,7 +43,7 @@
 
 ## 1. Tech setup
 
-Inherited from world §1 in full: Godot 4.x, 240×240 / 960×960, integer scaling, 16×16 tiles with 8×8 subtiles, 15×15 visible, 10 Hz integer deterministic tick, per-room PRNG, modern conveniences in.
+Inherited from world §1 in full: Godot 4.5, 240×240 / 720×720, integer scaling, 16×16 tiles with 8×8 subtiles, 15×15 visible, 10 Hz integer deterministic tick. Per-room PRNG and the modern conveniences ride the actor shell — planned, not yet code (world v1.1 sync).
 
 **Map:** one `LevelSpec` — the strip, **one RoomSpec, 112×15**, continuous scroll (camera free, clamped to strip bounds). No boundaries on the critical path; reaches are beat annotations, not walls. Three single-screen shrine RoomSpecs (15×15) attach via doors off-path; unobserved rooms freeze (inherited). The strip is always live — it's one room, and that's cheap.
 

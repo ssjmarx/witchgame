@@ -1,5 +1,5 @@
 ## Every color the project draws with, collected in one class of constants.
-## Day-one discipline (GDD §10): cold blue-gray base, water blues, warm accent
+## Day-one discipline (world.md §9): cold blue-gray base, water blues, warm accent
 ## reserved for fire later. Swap for DB16 when real art starts.
 
 class_name Palette

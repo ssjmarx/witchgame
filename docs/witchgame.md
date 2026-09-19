@@ -1,6 +1,6 @@
 # WITCH DEMO — Vertical Slice GDD v3.0
 
-*Delta doc on `world.md` v1.0. The engine — room model, CA, bridge, actor shell, contact contract, lasso core, doors, pockets, death and lives machinery, rendering, light rig, level format — is inherited from there. This doc owns her verbs, her rooms, her policy, and her roster. Where this doc and `world.md` disagree about engine behavior, `world.md` wins.*
+*Delta doc on `world.md` v1.1. The engine — room model, CA, bridge, actor shell, contact contract, lasso core, doors, pockets, death and lives machinery, rendering, light rig, level format — is inherited from there. This doc owns her verbs, her rooms, her policy, and her roster. Where this doc and `world.md` disagree about engine behavior, `world.md` wins.*
 
 **Goal:** one contiguous dungeon of seven chambers where every verb, element, container, and enemy behavior is operational with placeholder art. If this slice is fun with gray boxes, the game exists.
 
@@ -39,7 +39,7 @@ The laws this document has accumulated. When in doubt, these decide. Engine doct
 
 ## 1. Tech setup
 
-Inherited from world §1 in full: Godot 4.x, 240×240 / 960×960, integer scaling, 16×16 tiles with 8×8 subtiles, 15×15 visible, 10 Hz integer deterministic tick, per-room PRNG, modern conveniences in.
+Inherited from world §1 in full: Godot 4.5, 240×240 / 720×720, integer scaling, 16×16 tiles with 8×8 subtiles, 15×15 visible, 10 Hz integer deterministic tick. Per-room PRNG and the modern conveniences ride the actor shell — planned, not yet code (world v1.1 sync).
 
 **Map:** one `LevelSpec`, 112×15, seven `RoomSpec`s separated by door walls. Every door is player-facing — a boundary by engine law. Camera clamps to the active room's rect. Unobserved chambers freeze (inherited).
 

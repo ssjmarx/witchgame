@@ -7,7 +7,7 @@
 
 ## res://scripts/element_grid/element_renderer.gd
 
-GDD §3: one Image the size of the map, regenerated at tick rate, pushed
+world.md §9: one Image the size of the map, regenerated at tick rate, pushed
 through an ImageTexture, drawn under actors. The sim state *is* the picture.
 Regenerating 240×240 RGBA ten times a second is nothing — keep it dumb.
 
@@ -136,7 +136,7 @@ is the row number.
 ## res://scripts/global/palette.gd
 
 Every color the project draws with, collected in one class of constants.
-Day-one discipline (GDD §10): cold blue-gray base, water blues, warm accent
+Day-one discipline (world.md §9): cold blue-gray base, water blues, warm accent
 reserved for fire later. Swap for DB16 when real art starts.
 
 
