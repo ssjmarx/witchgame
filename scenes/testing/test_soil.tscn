@@ -1,4 +1,4 @@
-[gd_scene load_steps=2 format=3 uid="uid://dn4qrpwhl8i5s"]
+[gd_scene load_steps=2 format=3 uid="uid://dgp7hbaq0s7n7"]
 
 [ext_resource type="Script" uid="uid://vk7gu3y0cpk4" path="res://scripts/testing/test_soil.gd" id="1_qt26b"]
 

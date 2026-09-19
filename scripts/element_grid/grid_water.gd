@@ -1,4 +1,4 @@
-## The water field — a view over the shared TilePacket. One tick, four rules,
+## The water field — a view over the shared TilePacket. One tick, five rules,
 ## one invariant. GridWater owns the water RULES; the bytes live in pk.
 ## region labels are one tick stale (deterministic); (c) treats the donor's headspace as freely expandable.
 
@@ -161,7 +161,7 @@ func clear() -> void:
 	_regions.clear()
 	_escape.fill(false)
 
-## One simulation tick: relabel, run the four rules, verify volume, verify the ledger, emit band changes.
+## One simulation tick: relabel, eject displacement, run the flow rules, verify volume, verify the ledger, emit band changes.
 func tick() -> void:
 	tick_count += 1
 	# tick head: last tick's flow dies before any new move stamps
@@ -169,8 +169,9 @@ func tick() -> void:
 	_flow_best.fill(0)
 	_flow_dir.fill(0)
 	var snap := _levels_snapshot()
+	var checksum := total()   # captured before ANY pool-moving pass -- rule five included
 	_analyze()
-	var checksum := total()
+	_displacement_pass()
 	_cell_pass_all()
 	_seek_level_pass()
 	# the invariant: a tick may move water, never create or destroy it
@@ -364,7 +365,7 @@ func _cell_pass(i: int) -> void:
 				flow_stamp(t, FlowDir.DOWN_RIGHT if dx > 0 else FlowDir.DOWN_LEFT, taken)
 				return
 
-	# 3) CREEP — advance into dry space, both sides, half-difference each
+	# 3) CREEP -- advance into dry space, both sides, half-difference capped by the target's free capacity
 	for k in 2:
 		var dx := flip if k == 0 else -flip
 		var nx := p.x + dx
@@ -374,12 +375,13 @@ func _cell_pass(i: int) -> void:
 			continue
 		var n := idx(nx, p.y)
 		var nw := pk.get_pool(n, W)
-		if nw < LINE and nw < w - 1 and _gate(n, i):
-			var move := (w - nw) >> 1
+		var free := pk.pool_free(n)
+		if nw < LINE and free > 0 and nw < w - 1 and _gate(n, i):
+			var move := mini((w - nw) >> 1, free)
 			var taken := pk.take_pool(i, W, move)
 			pk.add_pool(n, W, taken)
 			flow_stamp(n, FlowDir.RIGHT if dx > 0 else FlowDir.LEFT, taken)
-			w = pk.get_pool(i, W)  # refresh: side two reads what side one left
+			w = pk.get_pool(i, W)
 
 ## May water from src enter dry cell t? Only if the displaced air has somewhere to go.
 func _gate(t: int, src: int) -> bool:
@@ -501,3 +503,45 @@ func _pocket_vented_for(cell: int, s: int, tops: PackedInt32Array) -> bool:
 				and _region_of[s_above] == _region_of[cell]:
 			return true  # the donor's own receding headspace
 	return false
+
+## Escape-gated column walk: does some tile above (x, y) have pool headroom with air that reaches open sky? The entry gate for deficit landings; _escape is the one-tick-stale opinion (_gate's family).
+func headroom_above(x: int, y: int) -> bool:
+	var yy := y - 1
+	while yy >= 0:
+		var i := idx(x, yy)
+		if TilePacket.FULL_SOLID[pk.get_terrain(i)]:
+			return false
+		if pk.pool_free(i) > 0 and _escape[i]:
+			return true
+		yy -= 1
+	return false
+
+## Rule five: every over-budget tile ejects its excess up its column -- solids sink, liquid climbs. Deposits land at the first free, escape-reachable tile, lightest material first; leftover excess persists (the entry gate should have prevented it).
+func _displacement_pass() -> void:
+	for y in range(height - 1, -1, -1):
+		for x in width:
+			var i := idx(x, y)
+			var excess := pk.pool_total(i) - pk.pool_capacity(i)
+			if excess <= 0:
+				continue
+			var yy := y - 1
+			while excess > 0 and yy >= 0:
+				var h := idx(x, yy)
+				if TilePacket.FULL_SOLID[pk.get_terrain(h)]:
+					break
+				var moved := 0
+				if _escape[h]:
+					while excess > 0 and pk.pool_free(h) > 0:
+						var m := pk.lightest_mat(i)
+						if m < 0:
+							break
+						var have := pk.get_pool(i, m)
+						var room := pk.pool_free(h)
+						var chunk := mini(excess, mini(have, room))
+						pk.take_pool(i, m, chunk)
+						pk.add_pool(h, m, chunk)
+						moved += chunk
+						excess -= chunk
+				if moved > 0:
+					flow_stamp(h, FlowDir.UP, moved)
+				yy -= 1

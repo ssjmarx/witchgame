@@ -294,14 +294,19 @@ func assert_all() -> bool:
 			ok = false
 	return ok
 
-## Remove up to amount units of the single lowest-density material present at tile i; returns units taken.
-func drain_lightest(i: int, amount: int) -> int:
+## Material id of the single lowest-density content at tile i; -1 when the pool is empty.
+func lightest_mat(i: int) -> int:
 	var best := -1
 	var best_d := 9999
 	for m in MAT_COUNT:
 		if get_pool(i, m) > 0 and DENSITY[m] < best_d:
 			best = m
 			best_d = DENSITY[m]
+	return best
+
+## Remove up to amount units of the single lowest-density material present at tile i; returns units taken.
+func drain_lightest(i: int, amount: int) -> int:
+	var best := lightest_mat(i)
 	if best == -1:
 		return 0
 	return take_pool(i, best, amount)

@@ -8,6 +8,8 @@ extends RefCounted
 const TILE := 16  # pixels per tile
 const FLOW_STREAK := 48  # <tune> — downward flow above this draws waterfall streaks
 const SUB_QUADS: Array = [[GridSand.TL, 0, 0], [GridSand.TR, 8, 0], [GridSand.BL, 0, 8], [GridSand.BR, 8, 8]]
+const BOTTOM_MASK := GridSand.BL | GridSand.BR  # the two lower subtile slots
+const TOP_MASK := GridSand.TL | GridSand.TR      # the two upper subtile slots
 
 # the sim state this renderer draws
 var stone: GridStone
@@ -41,7 +43,7 @@ func redraw() -> void:
 		_draw_cursor()
 	texture.update(image)
 
-## Paint one tile: beveled stone, or a water column with crest.
+## Paint one tile: beveled stone, or liquid under solids -- water level first, soil quads drawn over the fill they displace.
 func _draw_tile(x: int, y: int) -> void:
 	var px := x * TILE
 	var py := y * TILE
@@ -51,25 +53,12 @@ func _draw_tile(x: int, y: int) -> void:
 		image.fill_rect(Rect2i(px, py, 1, TILE), Palette.STONE_DARK)
 		image.set_pixel(px + 11, py + 11, Palette.STONE_DARK)
 		return
-
 	var n := stone.packet.get_sub(stone.idx(x, y), TilePacket.K_SOIL)
+	var w := water.get_water(x, y)
+	if w >= GridWater.LINE:
+		_draw_water(x, y, px, py, w, n)
 	if n != 0:
 		_draw_soil(x, y, px, py, n)
-
-	var w := water.get_water(x, y)
-	if w < GridWater.LINE:
-		return
-	# a tile under visible water is solid blue; only the surface tile draws level and crest
-	var covered: bool = y > 0 and water.get_water(x, y - 1) >= GridWater.LINE
-	if covered:
-		image.fill_rect(Rect2i(px, py, TILE, TILE), Palette.WATER)
-		_draw_flow(x, y, px, py)
-		return
-	var lines := w >> 4
-	var top := py + TILE - lines
-	image.fill_rect(Rect2i(px, top, TILE, lines), Palette.WATER)
-	image.fill_rect(Rect2i(px, top, TILE, 1), Palette.WATER_SURFACE)
-	_draw_flow(x, y, px, py)
 
 ## Overlay air pockets, per-segment level lines, and the tile grid (G).
 func _draw_debug() -> void:
@@ -125,12 +114,12 @@ func _draw_cursor() -> void:
 	image.fill_rect(Rect2i(px, py, 1, TILE), Palette.CURSOR)
 	image.fill_rect(Rect2i(px + TILE - 1, py, 1, TILE), Palette.CURSOR)
 
-## Waterfall streaks: downward flow at mag >= FLOW_STREAK with dir DOWN draws hashed vertical streaks keyed on (tile, tick_count) — hash-based, never the sim PRNG (world §1).
-func _draw_flow(x: int, y: int, px: int, py: int) -> void:
+## Waterfall streaks: downward flow at mag >= FLOW_STREAK with dir DOWN draws hashed vertical streaks keyed on (tile, tick_count) — hash-based, never the sim PRNG (world §1). Returns true when streaks were drawn; the caller then draws no fill or crest -- falling water is streaks, not pooled lines.
+func _draw_flow(x: int, y: int, px: int, py: int) -> bool:
 	if water.get_flow_mag(x, y) < FLOW_STREAK:
-		return
+		return false
 	if water.get_flow_dir(x, y) != GridWater.FlowDir.DOWN:
-		return
+		return false
 	var hsh := (x * 92837111 + y * 689287499 + water.tick_count * 283923481) & 0x7FFFFFFF
 	var ln := 3 + ((hsh >> 14) % 3)
 	var s1 := px + (hsh % TILE)
@@ -138,7 +127,7 @@ func _draw_flow(x: int, y: int, px: int, py: int) -> void:
 	image.fill_rect(Rect2i(s1, py, 1, ln), Palette.WATER_SURFACE)
 	if s2 != s1:
 		image.fill_rect(Rect2i(s2, py, 1, ln), Palette.WATER_SURFACE)
-
+	return true
 
 ## Loose soil: one 8x8 quad per set nibble bit, light lip on subtiles with no soil directly above.
 func _draw_soil(x: int, y: int, px: int, py: int, n: int) -> void:
@@ -159,3 +148,32 @@ func _draw_soil(x: int, y: int, px: int, py: int, n: int) -> void:
 			covered = (n_up & want) != 0
 		if not covered:
 			image.fill_rect(Rect2i(px + c[1], py + c[2], 8, 1), Palette.SOIL_LIP)
+
+## Waterline lift over the tile's own soil subtiles: a squeezed pool reads higher on the fill. v = raw lines (units >> 4), n = soil nibble; returns the drawn line count, clamped to 15.
+func _lifted_lines(v: int, n: int) -> int:
+	var bottom := TilePacket.POPCOUNT[n & BOTTOM_MASK]
+	var top := TilePacket.POPCOUNT[n & TOP_MASK]
+	var shown := v
+	if bottom == 2:
+		if top == 0:
+			shown = v + 4   # 2b: both bottom slots -- flat lift
+		else:
+			shown = mini(2 * v + 4, v + 6)   # 2c: the 2b lift, plus the original lines doubled, cap +6
+	elif bottom == 1:
+		var cap := 2
+		if top > 0:
+			cap = 4   # 2d widens 2a's cap when a top slot is also filled
+		shown = mini(2 * v, v + cap)
+	return mini(shown, 15)
+
+## Draw one tile's water: waterfall streaks replace the fill entirely, covered tiles go solid blue, the surface tile fills by the subtile-lifted line count with a crest.
+func _draw_water(x: int, y: int, px: int, py: int, w: int, n: int) -> void:
+	if _draw_flow(x, y, px, py):
+		return   # falling water: streaks stand in for the lines
+	if y > 0 and water.get_water(x, y - 1) >= GridWater.LINE:
+		image.fill_rect(Rect2i(px, py, TILE, TILE), Palette.WATER)
+		return
+	var lines := _lifted_lines(w >> 4, n)
+	var top := py + TILE - lines
+	image.fill_rect(Rect2i(px, top, TILE, lines), Palette.WATER)
+	image.fill_rect(Rect2i(px, top, TILE, 1), Palette.WATER_SURFACE)

@@ -29,15 +29,19 @@ var pk: TilePacket
 var width: int
 var height: int
 
+var water: GridWater
+
 var _sub := PackedByteArray()  # expanded w*2 x h*2 material codes, refilled each tick
+var _moved := PackedByteArray()  # per-tick flags: cells a subtile already landed in this pass
 var _tick_count := 0
 
-## Size the field, bind the packet via the stone facade.
-func _init(w: int, h: int, terrain: GridStone) -> void:
+## Size the field, bind the packet via the stone facade and the water field for headroom queries.
+func _init(w: int, h: int, terrain: GridStone, p_water: GridWater) -> void:
 	width = w
 	height = h
 	stone = terrain
 	pk = terrain.packet
+	water = p_water
 	_sub.resize(w * 2 * h * 2)
 
 ## Flat-array index of tile (x, y).
@@ -59,13 +63,12 @@ func clear() -> void:
 
 # -- Tick pipeline ------------------------------------------------------------
 
-## One tick: expand all subtile columns to the material grid, run the sand pass, repack and book, assert the ledger.
+## One tick: expand, run the sand pass, repack and book. The paired water tick owns the packet assert -- its displacement pass resolves repack's deficits same-tick.
 func tick() -> void:
 	_tick_count += 1
 	_expand()
 	_pass_all()
 	_repack()
-	pk.assert_all()
 
 ## Rebuild the expanded material grid from the packet nibbles (read-only).
 func _expand() -> void:
@@ -102,9 +105,7 @@ func _repack() -> void:
 				if _sub[base + 1] == code: n |= TR
 				if _sub[base + w2] == code: n |= BL
 				if _sub[base + w2 + 1] == code: n |= BR
-				var deficit := pk.set_sub(idx(x, y), kind, n)
-				if deficit > 0:
-					push_error("GridSand: repack over-budget at %d,%d kind %d" % [x, y, kind])
+				pk.set_sub(idx(x, y), kind, n)
 
 # -- The sand pass ------------------------------------------------------------
 
@@ -121,20 +122,25 @@ func _pass_all() -> void:
 			for sx in range(w2 - 1, -1, -1):
 				_sub_pass(sx, sy)
 
-## Apply fall / slide to one subtile; every move is one FALL[kind]-step drop, parameters read per material.
+## Apply fall / slide to one subtile; d is the medium-dependent rate -- FALL[kind] through air, SUB_SINK[kind] through liquid -- taken as gated single-cell sub-steps so a fast sinker cannot tunnel. d <= 0 (buoyant kinds) rests: rising is the float lab, not this one.
 func _sub_pass(sx: int, sy: int) -> void:
 	var w2 := width * 2
 	var code := _sub[sy * w2 + sx]
 	if code == EMPTY:
 		return
 	var kind := code - 1
+	var d := FALL[kind] if not _in_liquid(sx, sy) else TilePacket.SUB_SINK[kind]
+	if d <= 0:
+		return
 	var flip := -1 if (_tick_count % 2 == 0) else 1
-	var d := FALL[kind]
-	if _try_move(sx, sy, sx, sy + d, kind):
-		return
-	if _try_move(sx, sy, sx + flip * d, sy + d, kind):
-		return
-	_try_move(sx, sy, sx - flip * d, sy + d, kind)
+	var cy := sy
+	for _step in d:
+		if not _try_move(sx, cy, sx, cy + 1, kind):
+			break
+		cy += 1
+	if cy == sy:
+		if not _try_move(sx, cy, sx + flip, cy + 1, kind):
+			_try_move(sx, cy, sx - flip, cy + 1, kind)
 
 ## Move a subtile: target cell empty, tile enterable, diagonals also need the side cell clear and the slide policy's blessing.
 func _try_move(sx: int, sy: int, tx: int, ty: int, kind: int) -> bool:
@@ -155,20 +161,38 @@ func _try_move(sx: int, sy: int, tx: int, ty: int, kind: int) -> bool:
 	_sub[tc] = kind + 1
 	return true
 
-## Corner rule: the side cell must hold no subtile of any kind and sit in non-solid terrain.
+## Corner rule: the side cell must hold no subtile of any kind and sit in pool-capable terrain.
 func _side_clear(sx: int, sy: int) -> bool:
 	if sx < 0 or sx >= width * 2:
 		return false
 	if _sub[sy * width * 2 + sx] != EMPTY:
 		return false
-	return not stone.is_solid(sx >> 1, sy >> 1)
+	return not TilePacket.FULL_SOLID[pk.get_terrain(idx(sx >> 1, sy >> 1))]
 
-## May a subtile enter tile (x, y): non-solid terrain and empty pool (Lab D stance -- the Lab F density pass legalizes displacement).
+## Count subtile cells currently in tile (x, y) per the live expanded grid -- pre-repack truth, so same-pass landings are not missed. Caller guarantees in-bounds.
+func _cells_in_tile(x: int, y: int) -> int:
+	var w2 := width * 2
+	var base := (y * 2) * w2 + x * 2
+	var n := 0
+	if _sub[base] != EMPTY: n += 1
+	if _sub[base + 1] != EMPTY: n += 1
+	if _sub[base + w2] != EMPTY: n += 1
+	if _sub[base + w2 + 1] != EMPTY: n += 1
+	return n
+
+## May a subtile enter tile (x, y): terrain must hold a pool, and the landing either fits the budget or the displaced liquid has escape-reachable headroom up the column (air-gate family, world §3). Caller guarantees in-bounds.
 func _enterable(x: int, y: int) -> bool:
-	if stone.is_solid(x, y):
+	if TilePacket.FULL_SOLID[pk.get_terrain(idx(x, y))]:
 		return false
-	return pk.pool_total(idx(x, y)) == 0
+	var free := TilePacket.POOL_MAX - TilePacket.SUB_DISPLACE * (_cells_in_tile(x, y) + 1) - pk.pool_total(idx(x, y))
+	if free >= 0:
+		return true
+	return water.headroom_above(x, y)
 
 ## May kind take a diagonal move? The alchemy seam -- per-material policy; Lab E's damp reads state here to gate soil.
 func _can_slide(kind: int) -> bool:
 	return SLIDE[kind]
+
+## Is this subtile wetted? Its own tile holds pool content. A full solid tile holds no pool; neighbor reads are the float lab's extension, not soil's.
+func _in_liquid(sx: int, sy: int) -> bool:
+	return pk.pool_total(idx(sx >> 1, sy >> 1)) > 0

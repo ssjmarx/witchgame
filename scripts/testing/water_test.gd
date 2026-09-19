@@ -6,7 +6,7 @@ extends TestSandbox
 
 const PAINT_DOSE := 64    # water units added per tick while painting
 
-# F1-F6 acceptance diagrams: s stone, w water (255 units), a air
+# F1-F7 acceptance diagrams: s stone, w water (255 units), a air
 const PRESETS := {
 	KEY_F1: [
 		"saaas",
@@ -44,7 +44,7 @@ const PRESETS := {
 		"wsw",
 		"waw",
 	],
-	KEY_F6: [
+	KEY_F7: [
 		"sssss",
 		"swaas",
 		"swsas",
@@ -75,7 +75,7 @@ func _paint_stroke(t: Vector2i) -> bool:
 		return stone.set_terrain(t.x, t.y, GridStone.Terrain.STONE)
 	return false
 
-## Scene keys: F1-F6 presets, 1/2 material, K runs the water and packet suites.
+## Scene keys: F1-F7 presets, 1/2 material, K runs the water and packet suites.
 func _handle_key(k: int) -> bool:
 	if PRESETS.has(k):
 		_load_preset(k)
@@ -94,7 +94,7 @@ func _handle_key(k: int) -> bool:
 
 ## Controls listing for the water sandbox.
 func _hint_header() -> String:
-	return "1 stone  2 water  LMB paint  RMB erase\nSPC pause  T step  X clear  G debug  K tests  F1-F6 demos\n"
+	return "1 stone  2 water  LMB paint  RMB erase\nSPC pause  T step  X clear  G debug  K tests  F1-F7 demos\n"
 
 ## Reset both grids and carve the demo bound to a preset key.
 func _load_preset(keycode: int) -> void:
@@ -184,7 +184,7 @@ func run_self_tests() -> void:
 	_test("Ex3a sealed cave stays dry", KEY_F3, check_ex3a)
 	_test("Ex3b cave floods, ceiling drains", KEY_F4, check_ex3b)
 	_test("Ex5  bottom pocket floods, columns level", KEY_F5, check_ex5)
-	_test("Ex6  rotation around stone", KEY_F6, check_ex6)
+	_test("Ex6  rotation around stone", KEY_F7, check_ex6)
 	print("── done ──")
 
 ## Packet unit tests — pure TilePacket behavior, no carving, instant.
