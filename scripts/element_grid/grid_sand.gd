@@ -22,6 +22,9 @@ const FALL: Array[int] = [1, 1, 1]
 # may take diagonal moves -- the viscosity equivalent and the alchemy seam: Lab E's damp mortar gates soil by reading state here, not by a new rule
 const SLIDE: Array[bool] = [true, true, true]
 
+const SUB_FLOW_MASS := 64   # one subtile arrival = 64 pool units of displaced liquid -- flow magnitudes stay pool-coherent
+const SLIDE_WET: Array[bool] = [false, false, false]   # the sticky row: a wet tile holds every loose kind (mud glues stone)
+
 # -- Geometry and bindings ----------------------------------------------------
 
 var stone: GridStone
@@ -32,8 +35,11 @@ var height: int
 var water: GridWater
 
 var _sub := PackedByteArray()  # expanded w*2 x h*2 material codes, refilled each tick
-var _moved := PackedByteArray()  # per-tick flags: cells a subtile already landed in this pass
 var _tick_count := 0
+
+var _flow_mag := PackedByteArray()
+var _flow_best := PackedByteArray()
+var _flow_dir := PackedByteArray()
 
 ## Size the field, bind the packet via the stone facade and the water field for headroom queries.
 func _init(w: int, h: int, terrain: GridStone, p_water: GridWater) -> void:
@@ -43,6 +49,9 @@ func _init(w: int, h: int, terrain: GridStone, p_water: GridWater) -> void:
 	pk = terrain.packet
 	water = p_water
 	_sub.resize(w * 2 * h * 2)
+	_flow_mag.resize(w * h)
+	_flow_best.resize(w * h)
+	_flow_dir.resize(w * h)
 
 ## Flat-array index of tile (x, y).
 func idx(x: int, y: int) -> int:
@@ -66,6 +75,10 @@ func clear() -> void:
 ## One tick: expand, run the sand pass, repack and book. The paired water tick owns the packet assert -- its displacement pass resolves repack's deficits same-tick.
 func tick() -> void:
 	_tick_count += 1
+	# tick head: last tick's flow dies before any new move stamps (water's pattern)
+	_flow_mag.fill(0)
+	_flow_best.fill(0)
+	_flow_dir.fill(0)
 	_expand()
 	_pass_all()
 	_repack()
@@ -142,7 +155,7 @@ func _sub_pass(sx: int, sy: int) -> void:
 		if not _try_move(sx, cy, sx + flip, cy + 1, kind):
 			_try_move(sx, cy, sx - flip, cy + 1, kind)
 
-## Move a subtile: target cell empty, tile enterable, diagonals also need the side cell clear and the slide policy's blessing.
+## Move a subtile: target cell empty, tile enterable, diagonals also need the side cell clear and the slide policy; a tile crossing exports flow and hands off the mover's share of damp.
 func _try_move(sx: int, sy: int, tx: int, ty: int, kind: int) -> bool:
 	var w2 := width * 2
 	if tx < 0 or tx >= w2 or ty < 0 or ty >= height * 2:
@@ -155,10 +168,12 @@ func _try_move(sx: int, sy: int, tx: int, ty: int, kind: int) -> bool:
 	if tx != sx:
 		if not _side_clear(tx, sy):
 			return false
-		if not _can_slide(kind):
+		if not _can_slide(kind, idx(sx >> 1, sy >> 1)):
 			return false
 	_sub[sy * w2 + sx] = EMPTY
 	_sub[tc] = kind + 1
+	if (tx >> 1) != (sx >> 1) or (ty >> 1) != (sy >> 1):
+		_cross_tile(sx, sy, tx, ty, kind)
 	return true
 
 ## Corner rule: the side cell must hold no subtile of any kind and sit in pool-capable terrain.
@@ -189,10 +204,63 @@ func _enterable(x: int, y: int) -> bool:
 		return true
 	return water.headroom_above(x, y)
 
-## May kind take a diagonal move? The alchemy seam -- per-material policy; Lab E's damp reads state here to gate soil.
-func _can_slide(kind: int) -> bool:
+## May kind take a diagonal move? The mortar seam: a wet-tagged tile reads the sticky row -- slide-off (and lateral creep, when it exists) gates here, fall never does. Tags are one tick stale (the _escape pattern).
+func _can_slide(kind: int, i: int) -> bool:
+	if pk.has_tag(i, TilePacket.TAG_WET):
+		return SLIDE_WET[kind]
 	return SLIDE[kind]
 
 ## Is this subtile wetted? Its own tile holds pool content. A full solid tile holds no pool; neighbor reads are the float lab's extension, not soil's.
 func _in_liquid(sx: int, sy: int) -> bool:
 	return pk.pool_total(idx(sx >> 1, sy >> 1)) > 0
+
+## Register a subtile arrival at tile i (one mass quantum, dir code); magnitudes sum, direction follows the largest single arrival (first stamp wins ties -- fixed sweep order, so deterministic).
+func flow_stamp(i: int, dir: int, mag: int) -> void:
+	if mag <= 0:
+		return
+	_flow_mag[i] = mini(255, _flow_mag[i] + mag)
+	if mag > _flow_best[i]:
+		_flow_best[i] = mag
+		_flow_dir[i] = dir
+
+## Flow strength at (x, y): subtile mass arrived this tick, 64 pool-units per subtile; 0 outside.
+func get_flow_mag(x: int, y: int) -> int:
+	if x < 0 or y < 0 or x >= width or y >= height:
+		return 0
+	return _flow_mag[idx(x, y)]
+
+## Dominant flow direction at (x, y); NONE outside.
+func get_flow_dir(x: int, y: int) -> int:
+	if x < 0 or y < 0 or x >= width or y >= height:
+		return GridWater.FlowDir.NONE
+	return _flow_dir[idx(x, y)]
+
+## Book a tile crossing: export the arrival's flow mass, then hand off damp -- soil only (stone and ice hold none), an even share of the source's damp over its remaining soil subtiles, capped at one subtile's worth. Live counts on both sides keep the transfer inside capacity by construction (the carry proof).
+@warning_ignore("integer_division")
+func _cross_tile(sx: int, sy: int, tx: int, ty: int, kind: int) -> void:
+	var src := idx(sx >> 1, sy >> 1)
+	var dst := idx(tx >> 1, ty >> 1)
+	var dir := GridWater.FlowDir.DOWN
+	if tx < sx:
+		dir = GridWater.FlowDir.DOWN_LEFT
+	elif tx > sx:
+		dir = GridWater.FlowDir.DOWN_RIGHT
+	flow_stamp(dst, dir, SUB_FLOW_MASS)
+	if kind != TilePacket.K_SOIL:
+		return
+	var count := _soil_in_tile(sx >> 1, sy >> 1)
+	@warning_ignore("integer_division")
+	var share := mini(TilePacket.DAMP_PER_SUB, pk.get_damp(src) / maxi(1, count))
+	if share > 0:
+		pk.shift_damp(src, dst, share)
+
+## Count soil subtile cells in tile (x, y) per the live expanded grid -- damp's only carriers and only capacity. Caller guarantees in-bounds.
+func _soil_in_tile(x: int, y: int) -> int:
+	var w2 := width * 2
+	var base := (y * 2) * w2 + x * 2
+	var n := 0
+	if _sub[base] == TilePacket.K_SOIL + 1: n += 1
+	if _sub[base + 1] == TilePacket.K_SOIL + 1: n += 1
+	if _sub[base + w2] == TilePacket.K_SOIL + 1: n += 1
+	if _sub[base + w2 + 1] == TilePacket.K_SOIL + 1: n += 1
+	return n

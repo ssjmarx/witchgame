@@ -16,8 +16,8 @@ const MAT_COUNT := 6
 
 ## Ledger rows. The first six line up with Mat; the three subtile rows
 ## follow in column order (stone_s, soil_s, ice_s) == SUB_SINK order.
-enum Led { WATER, OIL, ACID, LAVA, SMOKE, STEAM, STONE_S, SOIL_S, ICE_S }
-const LED_COUNT := 9
+enum Led { WATER, OIL, ACID, LAVA, SMOKE, STEAM, STONE_S, SOIL_S, ICE_S, DAMP }
+const LED_COUNT := 10
 
 # -- Tuning tables -----------------------------------------------------------
 
@@ -50,6 +50,9 @@ const K_STONE := 0
 const K_SOIL := 1
 const K_ICE := 2
 
+const DAMP_PER_SUB := 32   # damp capacity per soil subtile (ruling: 1:1 with water and steam)
+const TAG_WET := 1        # body-tag bits; poisoned/tainted/holy/fertile arrive with the body-state system
+
 # -- Columns -----------------------------------------------------------------
 
 var w: int
@@ -66,6 +69,8 @@ var acid := PackedByteArray()
 var lava := PackedByteArray()
 var smoke := PackedByteArray()
 var steam := PackedByteArray()
+var damp := PackedByteArray()
+var tags := PackedByteArray()
 
 var _booked := PackedInt64Array()   # ledger: booked totals, one per row
 
@@ -74,7 +79,7 @@ func _init(p_w: int, p_h: int) -> void:
 	w = p_w
 	h = p_h
 	var n := w * h
-	# Ten boring resizes, no clever loop: a packed array passed through a temporary may not resize the member. Boring is bulletproof.
+	# Twelve boring resizes, no clever loop: a packed array passed through a temporary may not resize the member. Boring is bulletproof.
 	terrain.resize(n)
 	stone_s.resize(n)
 	soil_s.resize(n)
@@ -86,6 +91,8 @@ func _init(p_w: int, p_h: int) -> void:
 	smoke.resize(n)
 	steam.resize(n)
 	_booked.resize(LED_COUNT)
+	damp.resize(n)
+	tags.resize(n)
 	clear()
 
 ## Zero every column and the ledger.
@@ -101,6 +108,8 @@ func clear() -> void:
 	smoke.fill(0)
 	steam.fill(0)
 	_booked.fill(0)
+	damp.fill(0)
+	tags.fill(0)
 
 # -- Indexing ----------------------------------------------------------------
 
@@ -148,6 +157,11 @@ func set_sub(i: int, kind: int, n: int) -> int:
 		1: soil_s[i] = n
 		2: ice_s[i] = n
 	_book(Led.STONE_S + kind, POPCOUNT[n] - POPCOUNT[old])
+	# post-write: stranded damp drains with booking -- sim paths pre-carry it out, so this only catches tool writes (erase, brush, clear)
+	var cap := DAMP_PER_SUB * POPCOUNT[soil_s[i]]
+	if damp[i] > cap:
+		_book(Led.DAMP, cap - damp[i])
+		damp[i] = cap
 	return maxi(0, pool_total(i) - pool_capacity(i))
 
 # -- Capacity ----------------------------------------------------------------
@@ -292,7 +306,17 @@ func assert_all() -> bool:
 			var p := xy_of(i)
 			push_error("pool overflow at %d,%d: %d > %d" % [p.x, p.y, pool_total(i), pool_capacity(i)])
 			ok = false
+		if damp[i] > DAMP_PER_SUB * POPCOUNT[soil_s[i]]:
+			var q2 := xy_of(i)
+			push_error("damp over capacity at %d,%d: %d" % [q2.x, q2.y, damp[i]])
+			ok = false
 	return ok
+
+## Zero the damp and tag columns, booking the removal. (Clear/reset path.)
+func clear_damp() -> void:
+	_book(Led.DAMP, -damp_total())
+	damp.fill(0)
+	tags.fill(0)
 
 ## Material id of the single lowest-density content at tile i; -1 when the pool is empty.
 func lightest_mat(i: int) -> int:
@@ -321,3 +345,54 @@ func clear_mat(m: int) -> void:
 		Mat.LAVA: lava.fill(0)
 		Mat.SMOKE: smoke.fill(0)
 		Mat.STEAM: steam.fill(0)
+
+## Damp held by the soil at tile i; outside the content pool (world §2), 32 capacity per soil subtile.
+func get_damp(i: int) -> int:
+	return damp[i]
+
+## Damp capacity at tile i: 32 per soil subtile; stone and ice subtiles hold none.
+func damp_capacity(i: int) -> int:
+	return DAMP_PER_SUB * POPCOUNT[soil_s[i]]
+
+## Add up to amount of damp, clamped by capacity; returns units accepted (callers pre-compute, refused units are theirs).
+func add_damp(i: int, amount: int) -> int:
+	if amount <= 0:
+		return 0
+	var accepted := mini(amount, damp_capacity(i) - damp[i])
+	if accepted > 0:
+		damp[i] += accepted
+		_book(Led.DAMP, accepted)
+	return accepted
+
+## Remove up to amount of damp; returns units actually taken.
+func take_damp(i: int, amount: int) -> int:
+	if amount <= 0:
+		return 0
+	var taken := mini(amount, damp[i])
+	if taken > 0:
+		damp[i] -= taken
+		_book(Led.DAMP, -taken)
+	return taken
+
+## Transfer damp between tiles, no capacity clamp, no booking (net-zero by construction) -- the subtile carry path. The caller guarantees headroom by live subtile counts (GridSand's carry proof); the end-of-tick assert polices the invariant.
+func shift_damp(src: int, dst: int, amount: int) -> void:
+	var moved := mini(amount, damp[src])
+	damp[src] -= moved
+	damp[dst] += moved
+
+## Fresh recount of the damp column -- the soak checksum at 1:1 water-equivalent.
+func damp_total() -> int:
+	var sum := 0
+	for v in damp: sum += v
+	return sum
+
+## True when the tag bit is set at tile i.
+func has_tag(i: int, bit: int) -> bool:
+	return (tags[i] & bit) != 0
+
+## Set or clear one tag bit; tags are field state, never matter -- no booking.
+func set_tag(i: int, bit: int, on: bool) -> void:
+	if on:
+		tags[i] |= bit
+	else:
+		tags[i] &= 255 - bit

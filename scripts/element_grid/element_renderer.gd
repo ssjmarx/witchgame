@@ -14,6 +14,7 @@ const TOP_MASK := GridSand.TL | GridSand.TR      # the two upper subtile slots
 # the sim state this renderer draws
 var stone: GridStone
 var water: GridWater
+var sand: GridSand = null   # optional: bound by scenes that own a solid field
 
 # the picture: one map-sized image pushed through a texture
 var image: Image
@@ -96,6 +97,20 @@ func _draw_debug() -> void:
 			var ln := clampi(2 + (mag >> 6), 2, 6)
 			for s in ln + 1:
 				image.set_pixel(cx + GridWater.FLOW_DX[d] * s, cy + GridWater.FLOW_DY[d] * s, Palette.FLOW_DBG)
+				
+	# solid flow arrows: subtile arrivals at 64 pool-units each, same style as water
+	if sand != null:
+		for y in stone.height:
+			for x in stone.width:
+				var mag := sand.get_flow_mag(x, y)
+				if mag <= 0:
+					continue
+				var d := sand.get_flow_dir(x, y)
+				var cx := x * TILE + (TILE >> 1)
+				var cy := y * TILE + (TILE >> 1)
+				var ln := clampi(2 + (mag >> 6), 2, 6)
+				for s in ln + 1:
+					image.set_pixel(cx + GridWater.FLOW_DX[d] * s, cy + GridWater.FLOW_DY[d] * s, Palette.SOIL_FLOW_DBG)
 	
 	# the tile grid
 	var wpx := stone.width * TILE
@@ -129,7 +144,7 @@ func _draw_flow(x: int, y: int, px: int, py: int) -> bool:
 		image.fill_rect(Rect2i(s2, py, 1, ln), Palette.WATER_SURFACE)
 	return true
 
-## Loose soil: one 8x8 quad per set nibble bit, light lip on subtiles with no soil directly above.
+## Loose soil: one 8x8 quad per set nibble bit, light lip on subtiles with no soil directly above, damp darkening from the top of the occupied region (8 damp per pixel line -- the creeping front).
 func _draw_soil(x: int, y: int, px: int, py: int, n: int) -> void:
 	var n_up := 0
 	if y > 0:
@@ -148,6 +163,18 @@ func _draw_soil(x: int, y: int, px: int, py: int, n: int) -> void:
 			covered = (n_up & want) != 0
 		if not covered:
 			image.fill_rect(Rect2i(px + c[1], py + c[2], 8, 1), Palette.SOIL_LIP)
+	var d := stone.packet.get_damp(stone.idx(x, y))
+	if d > 0:
+		# lines from the top of the occupied region: a bottom-only tile darkens from its own top, so shallow stacks still show a level
+		var band_top := py if (n & TOP_MASK) != 0 else py + 8
+		var band_bot := band_top + (d >> 3)
+		for c in SUB_QUADS:
+			if (n & c[0]) == 0:
+				continue
+			var y0 := maxi(py + c[2], band_top)
+			var y1 := mini(py + c[2] + 8, band_bot)
+			if y1 > y0:
+				image.fill_rect(Rect2i(px + c[1], y0, 8, y1 - y0), Palette.SOIL_WET)
 
 ## Waterline lift over the tile's own soil subtiles: a squeezed pool reads higher on the fill. v = raw lines (units >> 4), n = soil nibble; returns the drawn line count, clamped to 15.
 func _lifted_lines(v: int, n: int) -> int:
@@ -177,3 +204,7 @@ func _draw_water(x: int, y: int, px: int, py: int, w: int, n: int) -> void:
 	var top := py + TILE - lines
 	image.fill_rect(Rect2i(px, top, TILE, lines), Palette.WATER)
 	image.fill_rect(Rect2i(px, top, TILE, 1), Palette.WATER_SURFACE)
+
+## Bind the solid field for its flow export; scenes without one skip the arrows.
+func bind_sand(p_sand: GridSand) -> void:
+	sand = p_sand
