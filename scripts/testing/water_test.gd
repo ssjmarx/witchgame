@@ -55,7 +55,7 @@ const PRESETS := {
 
 ## Load the U-tube demo on boot.
 func _setup() -> void:
-	water.trace_seek = true
+	# water.trace_seek = true
 	_load_preset(KEY_F1)
 
 ## Tick-boundary dosing: held-mouse water in PAINT_DOSE units.

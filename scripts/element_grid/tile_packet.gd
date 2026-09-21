@@ -76,13 +76,14 @@ var damp := PackedByteArray()
 var tags := PackedByteArray()
 
 var _booked := PackedInt64Array()   # ledger: booked totals, one per row
+var _present := PackedInt32Array()   # per material: count of tiles holding nonzero units -- the absent-pass gate
 
 ## Allocate the w×h grid: every column resized, ledger zeroed.
 func _init(p_w: int, p_h: int) -> void:
 	w = p_w
 	h = p_h
 	var n := w * h
-	# Twelve boring resizes, no clever loop: a packed array passed through a temporary may not resize the member. Boring is bulletproof.
+	# Thirteen boring resizes, no clever loop: a packed array passed through a temporary may not resize the member. Boring is bulletproof.
 	terrain.resize(n)
 	stone_s.resize(n)
 	soil_s.resize(n)
@@ -94,6 +95,7 @@ func _init(p_w: int, p_h: int) -> void:
 	smoke.resize(n)
 	steam.resize(n)
 	_booked.resize(LED_COUNT)
+	_present.resize(MAT_COUNT)
 	damp.resize(n)
 	tags.resize(n)
 	clear()
@@ -111,6 +113,7 @@ func clear() -> void:
 	smoke.fill(0)
 	steam.fill(0)
 	_booked.fill(0)
+	_present.fill(0)
 	damp.fill(0)
 	tags.fill(0)
 
@@ -198,6 +201,7 @@ func pool_free(i: int) -> int:
 
 ## The ONLY place pool bytes are mutated. Pre-clamped by callers.
 func _add_units(i: int, m: int, amount: int) -> void:
+	var before := get_pool(i, m)
 	match m:
 		Mat.WATER: water[i] += amount
 		Mat.OIL: oil[i] += amount
@@ -205,6 +209,11 @@ func _add_units(i: int, m: int, amount: int) -> void:
 		Mat.LAVA: lava[i] += amount
 		Mat.SMOKE: smoke[i] += amount
 		Mat.STEAM: steam[i] += amount
+	var after := before + amount
+	if before == 0 and after != 0:
+		_present[m] += 1
+	elif before != 0 and after == 0:
+		_present[m] -= 1
 
 ## Add up to amount units of m; returns units accepted (refused units are NOT destroyed -- the caller ejects them by flow rules).
 func add_pool(i: int, m: int, amount: int) -> int:
@@ -341,6 +350,7 @@ func drain_lightest(i: int, amount: int) -> int:
 ## Zero one pool column, booking the removal. (Clear/reset path.)
 func clear_mat(m: int) -> void:
 	_book(m, -mat_total(m))
+	_present[m] = 0
 	match m:
 		Mat.WATER: water.fill(0)
 		Mat.OIL: oil.fill(0)
@@ -405,4 +415,16 @@ func pool_damp_total() -> int:
 	var sum := damp_total()
 	for m in MAT_COUNT:
 		sum += mat_total(m)
+	return sum
+
+## True when any tile holds nonzero units of m -- the absent-material pass gate.
+func has_mat(m: int) -> bool:
+	return _present[m] > 0
+
+## Booked sum of the six pool rows -- O(1). Sound between asserts because a green assert
+## proves booked == counted; a take-without-add leak still moves the booked total.
+func booked_pool_total() -> int:
+	var sum := 0
+	for m in MAT_COUNT:
+		sum += _booked[m]
 	return sum

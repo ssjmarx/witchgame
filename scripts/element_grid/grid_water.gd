@@ -32,6 +32,7 @@ var stone: GridStone
 var pk: TilePacket            # alias of stone.packet — the data lives there
 var tick_count := 0           # ticks so far; parity flips the sweep direction
 var trace_seek := false  # TEMP: the U-bend hunt — logs every seek-level run and transfer; delete when closed
+var assert_early := false   # TEMP debug: run the packet assert at water's tick end too (engine attribution during hunts); the load-bearing assert is reactions'
 
 # private: per-tick bookkeeping, rebuilt by _analyze().
 # These are OPINION caches, not matter: derived each tick, one tick stale.
@@ -46,6 +47,7 @@ var _flow_dir := PackedByteArray()   # direction code of the dominant arrival
 
 var _body_of: PackedInt32Array # per cell: connected-water body id, -1 = none
 var _next_body_id := 0
+var _level_snap := PackedByteArray()   # reused per tick -- the snapshot allocates nothing
 
 ## Size the field, bind the packet via the stone facade; everything starts dry.
 func _init(w: int, h: int, terrain: GridStone) -> void:
@@ -71,6 +73,8 @@ func _init(w: int, h: int, terrain: GridStone) -> void:
 	_flow_mag.fill(0)
 	_flow_best.fill(0)
 	_flow_dir.fill(0)
+	
+	_level_snap.resize(w * h)
 
 ## Flat-array index of tile (x, y).
 func idx(x: int, y: int) -> int:
@@ -176,14 +180,27 @@ func tick() -> void:
 	_analyze()
 	_displacement_pass()
 	for m in MOVERS:
+		if not pk.has_mat(m):
+			continue   # globally absent: its cell pass and seek level are no-ops
 		_cell_pass_all(m)
 		_seek_level_pass(m)
-	_sort_pass()
-	# the invariant: a tick may move matter, never create or destroy it -- every material, sort trades included
+	if _two_mats_present():
+		_sort_pass()   # a trade needs two materials; a single-material field has no pair
 	if _checksum_all() != checksum:
 		push_error("GridWater: volume leaked — %d units" % (checksum - _checksum_all()))
-	pk.assert_all()   # the packet ledger rides every tick, load-bearing now
+	if assert_early:
+		pk.assert_all()
 	_emit_level_changes(snap)
+
+## True when at least two materials hold units anywhere -- the sort pass needs a pair to trade.
+func _two_mats_present() -> bool:
+	var kinds := 0
+	for m in TilePacket.MAT_COUNT:
+		if pk.has_mat(m):
+			kinds += 1
+			if kinds > 1:
+				return true
+	return false
 
 ## Map a scanline count to its coarse Level band.
 func _band(lines: int) -> int:
@@ -197,11 +214,9 @@ func _band(lines: int) -> int:
 
 ## Per-cell Level bands from before the tick, for change detection.
 func _levels_snapshot() -> PackedByteArray:
-	var snap := PackedByteArray()
-	snap.resize(width * height)
 	for i in width * height:
-		snap[i] = _band(pk.get_pool(i, W) >> 4)
-	return snap
+		_level_snap[i] = _band(pk.get_pool(i, W) >> 4)
+	return _level_snap
 
 ## Emit levels_changed listing every cell whose band changed this tick.
 func _emit_level_changes(before: PackedByteArray) -> void:
@@ -236,32 +251,68 @@ func _flood_body(start: int) -> void:
 	while not stack.is_empty():
 		var i: int = stack[stack.size() - 1]
 		stack.resize(stack.size() - 1)
-		for n in _neighbors4(i):
-			if pk.pool_total(n) >= LINE and _body_of[n] == -1:
-				_body_of[n] = id
-				stack.push_back(n)
+		var x := i % width
+		if x > 0 and pk.pool_total(i - 1) >= LINE and _body_of[i - 1] == -1:
+			_body_of[i - 1] = id
+			stack.push_back(i - 1)
+		if x < width - 1 and pk.pool_total(i + 1) >= LINE and _body_of[i + 1] == -1:
+			_body_of[i + 1] = id
+			stack.push_back(i + 1)
+		if i >= width and pk.pool_total(i - width) >= LINE and _body_of[i - width] == -1:
+			_body_of[i - width] = id
+			stack.push_back(i - width)
+		if i + width < width * height and pk.pool_total(i + width) >= LINE and _body_of[i + width] == -1:
+			_body_of[i + width] = id
+			stack.push_back(i + width)
 
 ## Label one air pocket; record its highest contact per body (a rotation's upper junction).
 func _flood_region(start: int) -> void:
 	var id := _regions.size()
-	var body_top := {}   # body id -> row of its highest cell touching us
+	var cells := PackedInt32Array()
 	var stack := PackedInt32Array()
 	stack.push_back(start)
 	_region_of[start] = id
 	while not stack.is_empty():
 		var i: int = stack[stack.size() - 1]
 		stack.resize(stack.size() - 1)
-		for n in _neighbors4(i):
-			if _is_air_idx(n) and _region_of[n] == -1:
-				_region_of[n] = id
-				stack.push_back(n)
-			elif pk.pool_total(n) >= LINE:
-				var b := _body_of[n]
-				if b >= 0:
-					var np := _xy_of(n)
-					if not body_top.has(b) or np.y < int(body_top[b]):
-						body_top[b] = np.y
+		cells.push_back(i)
+		var x := i % width
+		if x > 0 and _is_air_idx(i - 1) and _region_of[i - 1] == -1:
+			_region_of[i - 1] = id
+			stack.push_back(i - 1)
+		if x < width - 1 and _is_air_idx(i + 1) and _region_of[i + 1] == -1:
+			_region_of[i + 1] = id
+			stack.push_back(i + 1)
+		if i >= width and _is_air_idx(i - width) and _region_of[i - width] == -1:
+			_region_of[i - width] = id
+			stack.push_back(i - width)
+		if i + width < width * height and _is_air_idx(i + width) and _region_of[i + width] == -1:
+			_region_of[i + width] = id
+			stack.push_back(i + width)
+	var body_top := {}   # body id -> row of its highest cell touching us
+	for i in cells:
+		var x := i % width
+		if x > 0:
+			_note_contact(i - 1, body_top)
+		if x < width - 1:
+			_note_contact(i + 1, body_top)
+		if i >= width:
+			_note_contact(i - width, body_top)
+		if i + width < width * height:
+			_note_contact(i + width, body_top)
 	_regions.append({ "body_top": body_top })
+
+## Record a pocket cell's orthogonal neighbor as a body contact, keeping the highest row per body.
+func _note_contact(n: int, body_top: Dictionary) -> void:
+	if pk.pool_total(n) < LINE:
+		return
+	var b := _body_of[n]
+	if b < 0:
+		return
+	@warning_ignore("integer_division")
+	var row := n / width
+	if not body_top.has(b) or row < int(body_top[b]):
+		body_top[b] = row
 
 ## Mark every cell whose air can reach open sky; a monotone fixpoint, so order never matters.
 func _compute_escape() -> void:
@@ -280,28 +331,15 @@ func _compute_escape() -> void:
 				if not ok and y > 0 and stone.is_solid(x, y - 1):
 					if (x > 0 and _escape[i - 1]) or (x < width - 1 and _escape[i + 1]):
 						ok = true  # pinned under a ceiling: slide sideways
-				if not ok and pk.pool_total(i) <= AIR_PASSABLE_MAX:
-					for n in _neighbors4(i):
-						if pk.pool_total(n) <= AIR_PASSABLE_MAX and _escape[n]:
-							ok = true  # air flows through air
-							break
+				if not ok and pk.pool_total(i) <= AIR_PASSABLE_MAX \
+						and ((x > 0 and _escape[i - 1] and pk.pool_total(i - 1) <= AIR_PASSABLE_MAX)
+						or (x < width - 1 and _escape[i + 1] and pk.pool_total(i + 1) <= AIR_PASSABLE_MAX)
+						or (y > 0 and _escape[i - width] and pk.pool_total(i - width) <= AIR_PASSABLE_MAX)
+						or (y < height - 1 and _escape[i + width] and pk.pool_total(i + width) <= AIR_PASSABLE_MAX)):
+					ok = true  # air flows through air
 				if ok:
 					_escape[i] = true
 					changed = true
-
-## Orthogonal neighbors of cell i that stay inside the grid.
-func _neighbors4(i: int) -> Array:
-	var p := _xy_of(i)
-	var out: Array = []
-	if p.x > 0:
-		out.append(i - 1)
-	if p.x < width - 1:
-		out.append(i + 1)
-	if p.y > 0:
-		out.append(i - width)
-	if p.y < height - 1:
-		out.append(i + width)
-	return out
 
 ## Flat-index form of is_air_passable.
 func _is_air_idx(i: int) -> bool:
@@ -588,11 +626,9 @@ func _displacement_pass() -> void:
 				_eject_lightest_up(i, excess)
 
 ## Sum of every pool column -- the all-material volume checksum (damp changes only in the reaction tick, which owns its own books).
+## catch, not this one's.
 func _checksum_all() -> int:
-	var sum := 0
-	for m in TilePacket.MAT_COUNT:
-		sum += pk.mat_total(m)
-	return sum
+	return pk.booked_pool_total()
 
 ## Density stratification: vertically adjacent tiles trade -- the densest material in the upper tile sinks, the lightest in the lower rises -- when the upper's is denser. Pair rate = the slower material's SORT_RATE. Top-down scan cascades the dense side; the light side rises into scanned rows -- one tile per tick.
 func _sort_pass() -> void:

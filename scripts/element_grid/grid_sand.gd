@@ -1,6 +1,6 @@
-## The universal loose-solid field -- falling-sand rules at 8px subtile resolution across
-## every subtile column (stone, soil, ice), parameterized per material: FALL for vertical
-## rate, SLIDE for sideways willingness. Repose and staircases are emergent, never stored.
+## One tick: expand, run the sand pass, repack and book. Water's displacement pass resolves
+## repack's deficits same-tick; the packet assert is the reaction tick's (last engine's
+## privilege, per world §3).
 
 class_name GridSand
 extends RefCounted

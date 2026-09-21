@@ -35,9 +35,11 @@ func get_terrain(x: int, y: int) -> int:
 		return Terrain.STONE
 	return packet.get_terrain(idx(x, y))
 
-## True if the tile blocks flow (STONE, or outside the grid).
+## True if the tile blocks flow (now checks for all solids).
 func is_solid(x: int, y: int) -> bool:
-	return get_terrain(x, y) == Terrain.STONE
+	if not in_bounds(x, y):
+		return true
+	return TilePacket.FULL_SOLID[packet.get_terrain(idx(x, y))]
 
 ## Set terrain at (x, y); true (with emit) only when the value changed.
 func set_terrain(x: int, y: int, t: int) -> bool:

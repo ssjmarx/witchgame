@@ -22,7 +22,8 @@ func _init(w: int, h: int, terrain: GridStone) -> void:
 
 ## One tick: soak every water-bearing tile, refresh tags, assert the packet (reactions run last, so the end-of-tick assert is theirs).
 func tick() -> void:
-	_soak_pass()
+	if pk.has_mat(W):
+		_soak_pass()
 	_tag_pass()
 	pk.assert_all()
 
