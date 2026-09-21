@@ -421,8 +421,7 @@ func pool_damp_total() -> int:
 func has_mat(m: int) -> bool:
 	return _present[m] > 0
 
-## Booked sum of the six pool rows -- O(1). Sound between asserts because a green assert
-## proves booked == counted; a take-without-add leak still moves the booked total.
+## Booked sum of the six pool rows -- O(1). Sound between asserts because a green assert proves booked == counted; a take-without-add leak still moves the booked total.
 func booked_pool_total() -> int:
 	var sum := 0
 	for m in MAT_COUNT:

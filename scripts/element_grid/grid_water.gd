@@ -625,8 +625,7 @@ func _displacement_pass() -> void:
 			if excess > 0:
 				_eject_lightest_up(i, excess)
 
-## Sum of every pool column -- the all-material volume checksum (damp changes only in the reaction tick, which owns its own books).
-## catch, not this one's.
+## The all-material volume checksum -- read from the ledger (booked_pool_total); damp changes only in the reaction tick, which owns its own books. The ledger assert is the catch, not this one.
 func _checksum_all() -> int:
 	return pk.booked_pool_total()
 

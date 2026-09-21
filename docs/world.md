@@ -1,10 +1,19 @@
-# `world.md` — THE WORLD: Shared Engine & Simulation GDD v1.3
+# `world.md` — THE WORLD: Shared Engine & Simulation GDD v1.4
 
 *The foundation under both games. The witch doc and the magical girl doc are deltas on this one; where a game doc disagrees with this doc about engine behavior, this doc wins. Where this doc and the code disagree, the code wins — `TilePacket`, `GridWater`, `GridSand`, and `GridReactions` are already code, and the shipped sections below are written from them.*
 
 **Scope.** This doc owns: the room model, the cellular automata, the bridge, the actor shell and contact contract, the enemy frame, the lasso core, doors, pockets, death and lives machinery, the rendering and light rig, the level format, and the generator/checker framework. The game docs own: verbs, aiming, rosters, rooms, economies, and presentation. One 10 Hz integer world that renders itself; two heroines who visit it at 60 fps through the same customs office.
 
-**Where the code stands** *(synced at `2582b3b`)*. Shipped and therefore authoritative: the packet and its ledger (§2 as shipped), the terrain/liquid/solids/reactions quartet — `GridStone`, `GridWater`, `GridSand`, `GridReactions` — (§3 all-liquid movement densest-first with viscosity, the density sort pass, pressure-head seek level, displacement, both flow exports, soil/stone/ice movement, damp and soak), the renderer and palette (§9 lines marked *shipped*), and the `TestSandbox` harness with the water, packet, soil, and oil acceptance suites (six water examples, four packet tests, ten soil examples, eight oil examples — 3000 ticks to equilibrium, all through the shared drift-watched runner). Not yet code: the room model, oil's fire rules and acid/lava/gas behavior, fire, the driers, freeze/thaw, the bridge (§4), the actor machinery (§5–§8), the light rig, and the level format (§10). Shipped prose names its source; planned prose is design-ahead-of-code and says so.
+**Where the code stands** *(synced at `17a4fb6`)*. Shipped and therefore authoritative: the packet and its ledger (§2 as shipped), the terrain/liquid/solids/reactions quartet — `GridStone`, `GridWater`, `GridSand`, `GridReactions` — (§3 all-liquid movement densest-first with viscosity, the density sort pass, pressure-head seek level, displacement, the absent-material pass gates, both flow exports, soil/stone/ice movement, damp and soak), the renderer and palette (§9 lines marked *shipped*), and the `TestSandbox` harness with the water, packet, soil, and oil acceptance suites (six water examples, four packet tests, ten soil examples, eight oil examples — 3000 ticks to equilibrium, all through the shared drift-watched runner). Not yet code: the room model, oil's fire rules and acid/lava/gas behavior, fire, the driers, freeze/thaw, the bridge (§4), the actor machinery (§5–§8), the light rig, and the level format (§10). Shipped prose names its source; planned prose is design-ahead-of-code and says so.
+
+**Changelog v1.4 — the perf pass (`17a4fb6`)**
+
+- **The absent-material gate:** `TilePacket._present` counts, per material, how many tiles hold nonzero units, and `has_mat(m)` is the cheap pass gate — a globally absent mover's cell pass and seek level are skipped outright (the `GridWater` MOVERS loop), the soak pass runs only when water exists anywhere (`GridReactions`), and the density sort runs only when two or more materials are present (`_two_mats_present` — a trade needs a pair; a single-material field has none)
+- **The volume checksum is O(1):** `GridWater._checksum_all` reads `TilePacket.booked_pool_total()` — the booked sum of the six pool rows — instead of recounting every pool column per tick. Sound between asserts: a green assert proves booked == counted, and a take-without-add leak still moves the booked total, so the volume check never goes blind
+- **Zero per-tick allocation in `GridWater`'s bookkeeping:** the levels snapshot reuses `_level_snap` instead of resizing a fresh array every tick, and `_neighbors4` is retired — the body flood fill, the region flood fill, and the escape fixpoint walk flat indices with inline bounds checks (region contacts route through `_note_contact`)
+- **The assert's home is unchanged; its redundancy is now a switch:** reactions run last and still own the load-bearing end-of-tick `assert_all` (law 7 intact); `GridWater`'s own mid-tick assert is behind the `assert_early` TEMP debug flag — off by default, flipped during hunts to attribute a drift to its engine
+- **`is_solid` reads all solids:** `GridStone.is_solid` consults `TilePacket.FULL_SOLID` — every full-solid terrain blocks flow, and out-of-bounds is solid — where it previously tested STONE only
+- **Behavior-neutral by design:** the gates skip only work that provably had nothing to do — an absent material cannot flow, a lone material cannot trade, and the soak pass reads water only — so the pass order, the equilibria, and the acceptance suites stand untouched
 
 **Changelog v1.3 — oil ships (`2582b3b`)**
 
@@ -16,7 +25,7 @@
 - **Displacement factored:** `_eject_lightest_up` is shared by rule five and the transfer pass; the displacement pass runs at the tick head, before the movers
 - **Oil acceptance suite (OT1–OT4, UT1–UT4):** float, mixed-tile drain, three-phase stratification, soil sinks through oil (oil never soaks — the soak pass reads water only), the manometer equalizes by pressure, corner-dump spread, a sealed chamber refuses the trade, oil overtops while water never follows. The runner is shared now — one `_run_example` with a per-engine drift watch, per-material conservation, and subtile-mass checks; the water and soil suites route through it
 - **Rendering:** liquids stack in one tile by material share, densest at the bottom, crest on the topmost material; oil gets its own palette rows (dark ochre, far from the water blues); waterfall streaks tint by the majority liquid; acid/lava/smoke/steam alias water colors until their labs
-- **TEMP:** `GridWater.trace_seek` — the U-bend hunt's logging flag; delete when closed
+- **TEMP:** `GridWater.trace_seek` — the U-bend hunt's logging flag; delete when closed · `GridWater.assert_early` — water's mid-tick packet assert, off by default (reactions own the load-bearing one); delete when the hunts close
 
 **Changelog v1.2 — damp ships (`1bb3c45`)**
 
@@ -132,10 +141,12 @@ sand.tick()     # GridSand: flow reset -> expand the packet nibbles -> subtile p
 				#   repack (popcount deltas booked)
 water.tick()    # GridWater: flow reset -> level snapshot -> analyze (bodies, regions, escape)
 				#   -> displacement pass -> per-material cell pass densest-first (MOVERS: lava,
-				#   acid, water, oil; every move viscosity-capped) with seek level after each
-				#   material -> density sort pass -> volume + ledger asserts -> levels_changed
-react.tick()    # GridReactions: soak pass (water -> damp, percolation skip) -> tag pass (wet
-				#   hysteresis) -> the packet assert (reactions run last)
+				#   acid, water, oil; every move viscosity-capped; absent materials skipped) with seek
+				#   level after each -> density sort pass (two materials present) -> the O(1) volume
+				#   checksum from the ledger + the optional early assert -> levels_changed
+react.tick()    # GridReactions: soak pass (water -> damp, percolation skip; only when
+				#   water exists) -> tag pass (wet hysteresis) -> the packet assert (reactions run
+				#   last, the load-bearing one)
 ```
 
 The full build adds the passes below — all *planned* except the reaction pass, which ships with soak as its only row. Order stays a ruling: work orders at the head (bridge in, matter out), matter next, chemistry after movement, render last and never coupled. **Every rule in this doc is integer-only, deterministic, and free of the render clock.**
