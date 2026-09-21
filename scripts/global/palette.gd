@@ -13,6 +13,10 @@ const STONE_DARK    := Color("#4d5666")
 const WATER         := Color("#2f5fc0")
 const WATER_SURFACE := Color("#7ba4ec")
 
+## Oil and its surface -- first non-water liquid; dark ochre, far from the water blues and the debug amber.
+const OIL 			:= Color(0.678, 0.482, 0.213, 1.0)
+const OIL_SURFACE 	:= Color(0.866, 0.689, 0.399, 1.0)
+
 # soil
 const SOIL 			:= Color(0.478, 0.329, 0.204, 1.0)
 const SOIL_LIP 		:= Color(0.627, 0.455, 0.29, 1.0)

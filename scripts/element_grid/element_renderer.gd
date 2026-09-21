@@ -10,6 +10,9 @@ const FLOW_STREAK := 48  # <tune> — downward flow above this draws waterfall s
 const SUB_QUADS: Array = [[GridSand.TL, 0, 0], [GridSand.TR, 8, 0], [GridSand.BL, 0, 8], [GridSand.BR, 8, 8]]
 const BOTTOM_MASK := GridSand.BL | GridSand.BR  # the two lower subtile slots
 const TOP_MASK := GridSand.TL | GridSand.TR      # the two upper subtile slots
+const MAT_DRAW: Array[int] = [TilePacket.Mat.LAVA, TilePacket.Mat.ACID, TilePacket.Mat.WATER, TilePacket.Mat.OIL, TilePacket.Mat.SMOKE, TilePacket.Mat.STEAM]   # density order, densest first -- the draw stacks from the bottom
+const MAT_COLORS: Array = [Palette.WATER, Palette.OIL, Palette.WATER, Palette.WATER, Palette.WATER, Palette.WATER]   # indexed by Mat; acid/lava/smoke/steam alias water until their labs bring palette entries
+const MAT_SURFACE: Array[Color] = [Palette.WATER_SURFACE, Palette.OIL_SURFACE, Palette.WATER_SURFACE, Palette.WATER_SURFACE, Palette.WATER_SURFACE, Palette.WATER_SURFACE]
 
 # the sim state this renderer draws
 var stone: GridStone
@@ -55,9 +58,8 @@ func _draw_tile(x: int, y: int) -> void:
 		image.set_pixel(px + 11, py + 11, Palette.STONE_DARK)
 		return
 	var n := stone.packet.get_sub(stone.idx(x, y), TilePacket.K_SOIL)
-	var w := water.get_water(x, y)
-	if w >= GridWater.LINE:
-		_draw_water(x, y, px, py, w, n)
+	if water.get_total(x, y) >= GridWater.LINE:
+		_draw_water(x, y, px, py, n)
 	if n != 0:
 		_draw_soil(x, y, px, py, n)
 
@@ -139,9 +141,10 @@ func _draw_flow(x: int, y: int, px: int, py: int) -> bool:
 	var ln := 3 + ((hsh >> 14) % 3)
 	var s1 := px + (hsh % TILE)
 	var s2 := px + ((hsh >> 7) % TILE)
-	image.fill_rect(Rect2i(s1, py, 1, ln), Palette.WATER_SURFACE)
+	var mat := MAT_SURFACE[_majority(stone.idx(x, y))]
+	image.fill_rect(Rect2i(s1, py, 1, ln), mat)
 	if s2 != s1:
-		image.fill_rect(Rect2i(s2, py, 1, ln), Palette.WATER_SURFACE)
+		image.fill_rect(Rect2i(s2, py, 1, ln), mat)
 	return true
 
 ## Loose soil: one 8x8 quad per set nibble bit, light lip on subtiles with no soil directly above, damp darkening from the top of the occupied region (8 damp per pixel line -- the creeping front).
@@ -193,18 +196,50 @@ func _lifted_lines(v: int, n: int) -> int:
 		shown = mini(2 * v, v + cap)
 	return mini(shown, 15)
 
-## Draw one tile's water: waterfall streaks replace the fill entirely, covered tiles go solid blue, the surface tile fills by the subtile-lifted line count with a crest.
-func _draw_water(x: int, y: int, px: int, py: int, w: int, n: int) -> void:
+## Draw one tile's liquids: waterfall streaks replace the fill entirely; a covered tile fills its full height stacked by material share; the surface tile fills by the subtile-lifted line count, stacked densest from the bottom, crest on the topmost material.
+func _draw_water(x: int, y: int, px: int, py: int, n: int) -> void:
 	if _draw_flow(x, y, px, py):
-		return   # falling water: streaks stand in for the lines
-	if y > 0 and water.get_water(x, y - 1) >= GridWater.LINE:
-		image.fill_rect(Rect2i(px, py, TILE, TILE), Palette.WATER)
+		return   # falling liquid: streaks stand in for the lines
+	var i := stone.idx(x, y)
+	var total := stone.packet.pool_total(i)
+	if total < GridWater.LINE:
 		return
-	var lines := _lifted_lines(w >> 4, n)
-	var top := py + TILE - lines
-	image.fill_rect(Rect2i(px, top, TILE, lines), Palette.WATER)
-	image.fill_rect(Rect2i(px, top, TILE, 1), Palette.WATER_SURFACE)
+	var covered := y > 0 and water.get_total(x, y - 1) >= GridWater.LINE
+	var lines_total := _lifted_lines(total >> 4, n) if not covered else TILE
+	# partition the height across materials by share; the densest absorbs the rounding
+	var deficit := lines_total
+	for m in TilePacket.MAT_COUNT:
+		@warning_ignore("integer_division")
+		deficit -= lines_total * stone.packet.get_pool(i, m) / total
+	var ycur := py + TILE
+	var top_m := -1
+	for k in MAT_DRAW.size():
+		var m: int = MAT_DRAW[k]
+		var units := stone.packet.get_pool(i, m)
+		if units == 0:
+			continue
+		@warning_ignore("integer_division")
+		var lm := lines_total * units / total
+		if top_m < 0:
+			lm += deficit   # the densest material present absorbs the partition remainder
+		ycur -= lm
+		image.fill_rect(Rect2i(px, ycur, TILE, lm), MAT_COLORS[m])
+		top_m = m
+	if not covered and top_m >= 0:
+		image.fill_rect(Rect2i(px, ycur, TILE, 1), MAT_SURFACE[top_m])
 
 ## Bind the solid field for its flow export; scenes without one skip the arrows.
 func bind_sand(p_sand: GridSand) -> void:
 	sand = p_sand
+	
+
+## Majority liquid at tile i -- the streak color's proxy (ties and empties read as water).
+func _majority(i: int) -> int:
+	var best := TilePacket.Mat.WATER
+	var best_v: int = stone.packet.get_pool(i, best)
+	for m in range(1, TilePacket.MAT_COUNT):
+		var v := stone.packet.get_pool(i, m)
+		if v > best_v:
+			best = m as TilePacket.Mat
+			best_v = v
+	return best

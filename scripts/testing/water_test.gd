@@ -55,6 +55,7 @@ const PRESETS := {
 
 ## Load the U-tube demo on boot.
 func _setup() -> void:
+	water.trace_seek = true
 	_load_preset(KEY_F1)
 
 ## Tick-boundary dosing: held-mouse water in PAINT_DOSE units.
@@ -126,7 +127,7 @@ func run_self_tests() -> void:
 		var o: Vector2i = s[2]
 		for c in [[2, 4], [3, 4], [3, 1], [3, 2], [3, 3]]:
 			if w.get_water(o.x + c[0], o.y + c[1]) != 0:
-				return "sealed pocket took water at %s" % c
+				return "sealed pocket took water at %s" % [c]
 		for y in range(1, 5):
 			if w.get_water(o.x + 1, o.y + y) != 255:
 				return "column drained at y=%d" % y
@@ -160,7 +161,7 @@ func run_self_tests() -> void:
 			return "bottom pocket only %d" % w.get_water(o.x + 1, o.y + 4)
 		for p in [[0, 2], [2, 2], [0, 3], [2, 3], [0, 4], [2, 4]]:
 			if w.get_water(o.x + p[0], o.y + p[1]) < 240:
-				return "cell %s underfilled" % p
+				return "cell %s underfilled" % [p]
 		for y in 2:
 			if w.get_water(o.x, o.y + y) >= GridWater.LINE \
 					or w.get_water(o.x + 2, o.y + y) >= GridWater.LINE:

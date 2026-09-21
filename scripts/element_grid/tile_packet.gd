@@ -33,6 +33,9 @@ const SORT_RATE: Array[int] = [2, 2, 1, 1, 3, 8]          # <tune>
 ## column order [stone_s, soil_s, ice_s]. Negative = floats (ice floats).
 const SUB_SINK: Array[int] = [2, 1, -1]                   # <tune>
 
+## Per-material viscosity: throughput cap on every flow move (units per tick, per rule application). 255 = unthrottled, water-fast. The cap never changes an equilibrium -- only the pace of arriving -- and never binds for water (pool bytes cap at 255).
+const VISCOSITY: Array[int] = [255, 32, 255, 16, 255, 255]   # water oil acid lava smoke steam; <tune>
+
 # -- Rule tables -------------------------------------------------------------
 
 ## FULL_SOLID[T] -- full-tile terrain holds no pool (capacity 0).
@@ -396,3 +399,10 @@ func set_tag(i: int, bit: int, on: bool) -> void:
 		tags[i] |= bit
 	else:
 		tags[i] &= 255 - bit
+
+## Sum of every pool material plus damp -- the harness conservation base (subtile matter rides its own ledger rows).
+func pool_damp_total() -> int:
+	var sum := damp_total()
+	for m in MAT_COUNT:
+		sum += mat_total(m)
+	return sum

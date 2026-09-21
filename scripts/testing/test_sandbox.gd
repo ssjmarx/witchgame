@@ -11,7 +11,7 @@ const TILE := 16          # pixels per tile
 const TEST_TICKS := 3000  # ticks each self-test runs before checking
 
 # materials any sandbox can lay down; a scene exposes the subset it wants
-enum Paint { STONE, WATER, SOIL }
+enum Paint { STONE, WATER, SOIL, OIL }
 
 var stone: GridStone
 var water: GridWater
@@ -110,7 +110,7 @@ func _hover_tile() -> Vector2i:
 		return Vector2i(-1, -1)
 	return t
 
-## Carve a diagram (s stone, w water 255, d soil 15, t soil 12, . air) wrapped in a stone U-shell; returns its origin.
+## Carve a diagram (s stone, w water 255, o oil 255, d soil 15, t soil 12, . air) wrapped in a stone U-shell; returns its origin.
 func _carve_preset(p_stone: GridStone, p_water: GridWater, rows: Array) -> Vector2i:
 	var first: String = rows[0]
 	var pw := first.length()
@@ -135,6 +135,8 @@ func _carve_preset(p_stone: GridStone, p_water: GridWater, rows: Array) -> Vecto
 					p_stone.packet.set_sub(i, TilePacket.K_SOIL, 15)
 				"t":
 					p_stone.packet.set_sub(i, TilePacket.K_SOIL, 12)
+				"o":
+					p_water.add_liquid(ox + x, oy + y, TilePacket.Mat.OIL, 255)
 				_:
 					pass
 	return Vector2i(ox, oy)
@@ -164,3 +166,68 @@ func _info_line(t: Vector2i) -> String:
 ## No-op: redraws already ride the tick; keeps the signal wiring visible.
 func _on_levels_changed(_cells) -> void:
 	pass
+
+## Headless example runner, shared by every acceptance suite: carve rows into a fresh full engine stack, run optional god-hand setup before the snapshot, tick to equilibrium under a per-engine drift watch, then check + pool legality + per-material conservation + subtile mass. Drift reports on every failure, so expectation bugs and leaks never mask each other.
+@warning_ignore("shadowed_variable_base_class")
+func _run_example(name: String, rows: Array, check: Callable, setup: Callable) -> void:
+	var t_stone := GridStone.new(GRID_W, GRID_H)
+	var t_water := GridWater.new(GRID_W, GRID_H, t_stone)
+	var t_sand := GridSand.new(GRID_W, GRID_H, t_stone, t_water)
+	var t_react := GridReactions.new(GRID_W, GRID_H, t_stone)
+	var o := _carve_preset(t_stone, t_water, rows)
+	if setup.is_valid():
+		setup.call([t_stone, t_water, o, t_sand])
+	var w0 := PackedInt32Array()
+	for m in TilePacket.MAT_COUNT:
+		w0.append(t_stone.packet.mat_total(m))
+	w0.append(t_stone.packet.damp_total())
+	var s0 := PackedInt32Array()
+	for k in 3:
+		s0.append(t_sand.total(k))
+	for t in TEST_TICKS:
+		var before := t_stone.packet.pool_damp_total()
+		t_sand.tick()
+		if t_stone.packet.pool_damp_total() != before:
+			print("FIRST DRIFT tick %d: SAND %d" % [t, before - t_stone.packet.pool_damp_total()])
+			break
+		t_water.tick()
+		if t_stone.packet.pool_damp_total() != before:
+			print("FIRST DRIFT tick %d: WATER %d" % [t, before - t_stone.packet.pool_damp_total()])
+			break
+		t_react.tick()
+		if t_stone.packet.pool_damp_total() != before:
+			print("FIRST DRIFT tick %d: REACT %d" % [t, before - t_stone.packet.pool_damp_total()])
+			break
+	var err: String = check.call([t_stone, t_water, o, t_sand])
+	if err == "":
+		var pk := t_stone.packet
+		for i in GRID_W * GRID_H:
+			if pk.pool_total(i) > pk.pool_capacity(i):
+				err = "pool over capacity at %s" % pk.xy_of(i)
+				break
+	var parts := PackedStringArray()
+	var drift := 0
+	for m in range(1, TilePacket.MAT_COUNT):   # water pairs with damp below -- soak is the sanctioned 1:1 channel
+		var dm := w0[m] - t_stone.packet.mat_total(m)
+		if dm != 0:
+			drift += dm
+			parts.append("%s %d" % [TilePacket.Mat.keys()[m].to_lower(), dm])
+	var dwd := (w0[TilePacket.Mat.WATER] - t_stone.packet.mat_total(TilePacket.Mat.WATER)) \
+			+ (w0[TilePacket.MAT_COUNT] - t_stone.packet.damp_total())
+	if dwd != 0:
+		drift += dwd
+		parts.append("water+damp %d" % dwd)
+	var drift_txt := "" if parts.is_empty() else " [drift: " + ", ".join(parts) + "]"
+	var sub_txt := ""
+	for k in 3:
+		if t_sand.total(k) != s0[k]:
+			sub_txt = " [subtile mass kind %d: %d -> %d]" % [k, s0[k], t_sand.total(k)]
+	if err == "" and drift == 0 and sub_txt == "":
+		print("PASS  %s" % name)
+		return
+	var why := err
+	if why == "" and drift != 0:
+		why = "conservation drifted"
+	elif why == "" and sub_txt != "":
+		why = "subtile mass changed"
+	print("FAIL  %s -- %s%s%s" % [name, why, drift_txt, sub_txt])

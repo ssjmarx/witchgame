@@ -1,4 +1,4 @@
-## Soil sandbox -- GridSand dry-soil rules over the shared packet.
+## Soil sandbox — solids, damp, and mortar over the shared packet.
 ## 1 stone / 2 water / 3 soil select material, LMB paints, RMB erases.
 ## K runs the soil acceptance suite headlessly and reports PASS/FAIL.
 
@@ -156,55 +156,10 @@ func _brush_soil(t: Vector2i) -> void:
 			stone.packet.set_sub(i, TilePacket.K_SOIL, n | bit)
 			return
 
-## Carve one example fresh, run it to equilibrium, report PASS/FAIL/leak (the classic three-arg shape).
+## Carve one preset-key example and route it through the shared runner.
 @warning_ignore("shadowed_variable_base_class")
 func _test(name: String, preset_key: int, check: Callable) -> void:
 	_run_example(name, PRESETS[preset_key], check, Callable())
-
-## The runner: god-hand setup lands between carve and first tick; w0 snapshots water AND damp after it, so injected damp does not read as a leak. Conservation is water + damp at 1:1; drift reports even when the check fails, so a wrong expectation and a real leak never mask each other.
-@warning_ignore("shadowed_variable_base_class")
-func _run_example(name: String, rows: Array, check: Callable, setup: Callable) -> void:
-	var t_stone := GridStone.new(GRID_W, GRID_H)
-	var t_water := GridWater.new(GRID_W, GRID_H, t_stone)
-	var t_sand := GridSand.new(GRID_W, GRID_H, t_stone, t_water)
-	var t_react := GridReactions.new(GRID_W, GRID_H, t_stone)
-	var o := _carve_preset(t_stone, t_water, rows)
-	if setup.is_valid():
-		setup.call([t_stone, t_water, o, t_sand])
-	var w0 := t_water.total() + t_stone.packet.damp_total()
-	var s0 := t_sand.total(TilePacket.K_SOIL)
-	for t in TEST_TICKS:
-		var before := t_water.total() + t_stone.packet.damp_total()
-		t_sand.tick()
-		if t_water.total() + t_stone.packet.damp_total() != before:
-			print("FIRST DRIFT tick %d: SAND %d" % [t, before - t_water.total() - t_stone.packet.damp_total()])
-			break
-		t_water.tick()
-		if t_water.total() + t_stone.packet.damp_total() != before:
-			print("FIRST DRIFT tick %d: WATER %d" % [t, before - t_water.total() - t_stone.packet.damp_total()])
-			break
-		t_react.tick()
-		if t_water.total() + t_stone.packet.damp_total() != before:
-			print("FIRST DRIFT tick %d: REACT %d" % [t, before - t_water.total() - t_stone.packet.damp_total()])
-			break
-	var err: String = check.call([t_stone, t_water, o, t_sand])
-	if err == "":
-		var pk := t_stone.packet
-		for i in GRID_W * GRID_H:
-			if pk.pool_total(i) > pk.pool_capacity(i):
-				err = "pool over capacity at %s" % pk.xy_of(i)
-				break
-	var drift := w0 - t_water.total() - t_stone.packet.damp_total()
-	if err != "" and drift != 0:
-		print("FAIL  %s -- %s [also drift %d]" % [name, err, drift])
-	elif err != "":
-		print("FAIL  %s -- %s" % [name, err])
-	elif drift != 0:
-		print("FAIL  %s -- water+damp leaked %d units" % [name, drift])
-	elif t_sand.total(TilePacket.K_SOIL) != s0:
-		print("FAIL  %s -- soil mass changed %d -> %d" % [name, s0, t_sand.total(TilePacket.K_SOIL)])
-	else:
-		print("PASS  %s" % name)
 
 ## Soil acceptance examples -- repose, corner rule, compaction.
 func run_soil_tests() -> void:
