@@ -1,6 +1,6 @@
 # WITCH DEMO — Vertical Slice GDD v3.0
 
-*Delta doc on `world.md` v1.1. The engine — room model, CA, bridge, actor shell, contact contract, lasso core, doors, pockets, death and lives machinery, rendering, light rig, level format — is inherited from there. This doc owns her verbs, her rooms, her policy, and her roster. Where this doc and `world.md` disagree about engine behavior, `world.md` wins.*
+*Delta doc on `world.md` v1.5. Sibling of `magicalgirlgame.md` v2.0 and `amazongame.md` v1.0. The engine — room model, CA, bridge, actor shell, contact contract, lasso core, doors, pockets, death and lives machinery, rendering, light rig, level format — is inherited from there. This doc owns her verbs, her rooms, her policy, and her roster. Where this doc and `world.md` disagree about engine behavior, `world.md` wins.*
 
 **Goal:** one contiguous dungeon of seven chambers where every verb, element, container, and enemy behavior is operational with placeholder art. If this slice is fun with gray boxes, the game exists.
 
@@ -23,6 +23,7 @@
 - Her breadcrumb trail extends the engine trajectory ring to 5 s
 - **Lives: 3, found as world secrets.** Zero lives → the full reset. The entry-door ritual is the voluntary version
 - Enemy API compliance is law (world §6): every witch enemy must survive the magical girl's verbs. A witch-caught Drip is a throwable water balloon — its SPLASH is its wetness, dumped
+- *(Addendum, `d3946f0`)* The outlined witch sheet placeholder (`assets/witch/witch-Sheet-outlined.png`) is in the repo — placeholder art; the palette bake (world §9) stays pending. The fire lab shipped her world's fuel-and-fire substrate (world v1.5): burnable wood, contact ignition at 5 ticks, and the boil ladder that finally dries damp — her smolder, heat, and panic clock remain bridge-side (E4)
 
 ## 0. Design doctrine
 

@@ -11,7 +11,7 @@ const SMOKE: int = TilePacket.Mat.SMOKE
 const STEAM: int = TilePacket.Mat.STEAM
 const SOAK_MAX := 16   # soak-rate ceiling; floor division means 15 is the effective max while w tops at 255
 
-# -- fire tuning (FIRE_LAB.md, locked) ----------------------------------------
+# -- fire tuning (world.md §13, locked) ---------------------------------------
 
 const BURN_RATE := 24        # fuel-units per tick per burning tile -- constant, never ventilation-modulated
 const OIL_PER_FUEL := 4      # one oil unit carries four fuel-units of energy; 255 oil burns 4x a 255 fuel tile

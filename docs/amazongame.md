@@ -1,6 +1,6 @@
 # AMAZON DEMO — Vertical Slice GDD v1.0
 
-*Delta doc on `world.md` v1.4 — shared engine, shared enemy IP, different verbs. Sibling of `witchgame.md` v3.0 and `magicalgirlgame.md` v2.0. Where this doc and `world.md` disagree about engine behavior, `world.md` wins.*
+*Delta doc on `world.md` v1.5 — shared engine, shared enemy IP, different verbs. Sibling of `witchgame.md` v3.0 and `magicalgirlgame.md` v2.0. Where this doc and `world.md` disagree about engine behavior, `world.md` wins.*
 
 **Engine deltas we are the demanding customer of:** the **LOOSE flag** (world §3, planned — her sword is its first real client), the **wind system** (world's open item — authored gusts ship in this slice regardless of the draft field), and the **shard-actor pattern** (matter leaving the packet as actor holdings and returning on settle — the pot-interior precedent generalized; a new customer of two planned rows, no new law). **One heroine-value dispensation, declared openly:** `SANDAL_JUMP_V`.
 

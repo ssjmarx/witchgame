@@ -1,6 +1,6 @@
 # MAGICAL GIRL DEMO — Vertical Slice GDD v2.0
 
-*Delta doc on `world.md` v1.1 — shared engine, shared enemy IP, different verbs. Sibling of `witchgame.md` v3.0. Engine deltas: **none.** The strip, the bridge, LOOSE_STONE, the pockets — all engine now. This doc owns verbs, aiming, roster, rooms, and prizes.*
+*Delta doc on `world.md` v1.5 — shared engine, shared enemy IP, different verbs. Sibling of `witchgame.md` v3.0 and `amazongame.md` v1.0. Engine deltas: **none.** The strip, the bridge, LOOSE_STONE, the pockets — all engine now. This doc owns verbs, aiming, roster, rooms, and prizes.*
 
 **Goal:** one continuous-scroll strip of seven reaches plus three single-screen shrines where every verb — grab, throw, swoosh, band, pip, pocket, vent, boil — is operational with placeholder art. If this slice is fun with gray boxes, the game exists.
 
