@@ -7,9 +7,9 @@ extends RefCounted
 
 signal terrain_changed(cells)  # Array[Vector2i]
 
-# tile values; STONE is solid to water and air, AIR is passable.
-# First two of TilePacket.T — kept as an alias so existing callers don't change.
-enum Terrain { AIR, STONE }
+# tile values; STONE and WOOD are solid to water and air, AIR is passable.
+# First three of TilePacket.T — kept as aliases so existing callers don't change.
+enum Terrain { AIR, STONE, WOOD }
 
 var packet: TilePacket
 var width: int

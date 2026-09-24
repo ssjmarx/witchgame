@@ -1,6 +1,6 @@
 ## The liquid engine — a view over the shared TilePacket. Every pool liquid runs the four
 ## movement rules as its own densest-first pass (viscosity-throttled), then the sort pass
-## trades densities; seek-level runs on pressure heads — density-weighted column integrals.
+## trades densities; gases rise, spread laterally when blocked, and hop up-diagonal only around corners — exchanging ratios across horizontal faces — and seek level stays a liquid-only rule.
 
 class_name GridWater
 extends RefCounted
@@ -12,6 +12,7 @@ enum Level { DRY, WET, HALF, FULL }
 
 const LINE := 16              # water units per visible scanline (SACRED)
 const AIR_PASSABLE_MAX := 15  # water below one line counts as air for pockets
+const GAS_SWAP := 16   # <tune> — exchange cap per pair per gas, units per tick
 const PRESSURE_RATE := 64     # units/tick per square of opening
 const PRESSURE_MIN_DIFF := 2  # top-up hysteresis, in donor-material quanta -- the actionable floor is this × density[m]
 const DIFFUSER_FLOW := 96    # <tune> — flow_mag above this marks a diffuser (world §13; game-side consumer)
@@ -23,7 +24,8 @@ const FLOW_DY: Array[int] = [0, -1, -1, 0, 1, 1, 1, 0, -1]
 
 const W: int = TilePacket.Mat.WATER   # the water code, named once for call sites
 
-const MOVERS: Array[int] = [TilePacket.Mat.LAVA, TilePacket.Mat.ACID, TilePacket.Mat.WATER, TilePacket.Mat.OIL]   # densest first: the loop order IS the drain order; gases join at the float lab
+const MOVERS: Array[int] = [TilePacket.Mat.LAVA, TilePacket.Mat.ACID, TilePacket.Mat.WATER, TilePacket.Mat.OIL, TilePacket.Mat.SMOKE, TilePacket.Mat.STEAM]   # densest first: the loop order IS the drain order; the gases joined here at the fire lab, running their own rules
+const GAS_MATS: Array[int] = [TilePacket.Mat.SMOKE, TilePacket.Mat.STEAM]   # the rising materials; _is_gas and the exchange pass read this one list — fixed order keeps the refund path deterministic
 
 # public: grid geometry and bindings
 var width: int
@@ -168,7 +170,7 @@ func clear() -> void:
 	_regions.clear()
 	_escape.fill(false)
 
-## One simulation tick: relabel, eject displacement, run every mover's flow rules densest-first, stratify densities, verify volume, verify the ledger, emit band changes.
+## One simulation tick: relabel, eject displacement, run every mover's rules densest-first (liquids fall and seek level, gases rise), stratify densities, verify volume, verify the ledger, emit band changes.
 func tick() -> void:
 	tick_count += 1
 	# tick head: last tick's flow dies before any new move stamps
@@ -182,8 +184,13 @@ func tick() -> void:
 	for m in MOVERS:
 		if not pk.has_mat(m):
 			continue   # globally absent: its cell pass and seek level are no-ops
-		_cell_pass_all(m)
-		_seek_level_pass(m)
+		if _is_gas(m):
+			_gas_cell_pass_all(m)
+		else:
+			_cell_pass_all(m)
+			_seek_level_pass(m)
+	if pk.has_mat(TilePacket.Mat.SMOKE) and pk.has_mat(TilePacket.Mat.STEAM):
+		_exchange_pass()   # ratios can differ only where both gases exist
 	if _two_mats_present():
 		_sort_pass()   # a trade needs two materials; a single-material field has no pair
 	if _checksum_all() != checksum:
@@ -721,3 +728,123 @@ func _eject_lightest_up(i: int, amount: int) -> int:
 			flow_stamp(h, FlowDir.UP, moved)
 		yy -= 1
 	return amount - remaining
+
+## True for the rising materials: smoke and steam ride MOVERS but run their own rules — rise first, creep only when pinned, exchange ratios horizontally, never seek level (a gas column is not a pressure vessel; the sort pass is the only elevator a gas needs through liquid).
+func _is_gas(m: int) -> bool:
+	return GAS_MATS.has(m)
+	
+## Run _gas_cell_pass over every cell top-down, sweep alternating per tick: rise mirrors fall's bottom-up — scanning against the motion, so arrived gas is never reprocessed and a bubble climbs one tile per tick.
+func _gas_cell_pass_all(m: int) -> void:
+	var ltr := (tick_count % 2 == 0)
+	for y in height:
+		if ltr:
+			for x in width:
+				_gas_cell_pass(idx(x, y), m)
+		else:
+			for x in range(width - 1, -1, -1):
+				_gas_cell_pass(idx(x, y), m)
+
+## Rise and spread for one gas cell — the three-step stack: what fits goes up (a transit column pistons whole and returns — the chimney ruling); the blocked remainder spreads LATERALLY at its own level, half-difference into lower-gas neighbors both sides; only a cell blocked above AND beside hops up-diagonal — corner rounding, never the primary dispersal, because order IS policy: hop-first grows a backed-up pile into a 45-degree cone, lateral-first flattens it into a mushroom. Rise and the hop are volume-neutral swaps with the air they enter (no air-gate); the hop is corner-gated so gas never leaks through a pinched diagonal.
+func _gas_cell_pass(i: int, m: int) -> void:
+	var g := pk.get_pool(i, m)
+	if g == 0:
+		return
+	var p := _xy_of(i)
+	var visc := TilePacket.VISCOSITY[m]
+	var flip := -1 if (tick_count % 2 == 0) else 1
+	# 1) RISE — as much as the headroom above takes; the remainder is step two's business
+	if p.y > 0 and not stone.is_solid(p.x, p.y - 1):
+		var a := i - width
+		var free := pk.pool_free(a)
+		if free > 0:
+			var move := mini(mini(g, free), visc)
+			var taken := pk.take_pool(i, m, move)
+			pk.add_pool(a, m, taken)
+			flow_stamp(a, FlowDir.UP, taken)
+			g -= taken
+			if g == 0:
+				return
+	# 2) LATERAL SPREAD — the blocked remainder levels out at its own height, half-difference into lower-gas neighbors, both sides, cascading convergently down the row; one move kind per cell per tick, so a cell that spread does not also hop
+	var crept := 0
+	if g > 0:
+		for k in 2:
+			var dx := flip if k == 0 else -flip
+			var nx := p.x + dx
+			if nx < 0 or nx >= width:
+				continue
+			if stone.is_solid(nx, p.y):
+				continue
+			var n := idx(nx, p.y)
+			var ng := pk.get_pool(n, m)
+			var free := pk.pool_free(n)
+			if ng < g - 1 and free > 0:
+				var move := mini(mini((g - ng) >> 1, free), visc)
+				var taken := pk.take_pool(i, m, move)
+				pk.add_pool(n, m, taken)
+				flow_stamp(n, FlowDir.RIGHT if dx > 0 else FlowDir.LEFT, taken)
+				g = pk.get_pool(i, m)
+				crept += taken
+		if crept > 0:
+			return
+	# 3) UP-DIAGONAL HOP — blocked above and blocked beside: the remainder hops corner-ward; the flip shoulder takes half (odd unit included), the other the rest, so a lone shoulder drains all; the diagonal is sealed only when BOTH flanking corners hold no capacity — the tile above and the tile beside, terrain-solid or four subtiles — one solid corner is a corner to round
+	if p.y > 0 and g > 0:
+		var capped_above := pk.pool_capacity(i - width) == 0
+		for k in 2:
+			if g <= 0:
+				break
+			var dx := flip if k == 0 else -flip
+			var nx := p.x + dx
+			if nx < 0 or nx >= width:
+				continue
+			if capped_above and pk.pool_capacity(idx(nx, p.y)) == 0:
+				continue   # pinched between two capacity-0 tiles: the sealed crack
+			var t := idx(nx, p.y - 1)
+			var free := pk.pool_free(t)
+			if free <= 0:
+				continue
+			var want := ((g + 1) >> 1) if k == 0 else g
+			var give := mini(mini(want, free), visc)
+			var taken := pk.take_pool(i, m, give)
+			pk.add_pool(t, m, taken)
+			flow_stamp(t, FlowDir.UP_RIGHT if dx > 0 else FlowDir.UP_LEFT, taken)
+			g -= taken
+
+## Horizontal gas exchange (rule six, diffusion-shaped): each gas trades half its difference between adjacent gas-holding tiles, capped by GAS_SWAP — the equalizer seek level refuses to be; runs after the movers and before the sort, so the tick ends stratified.
+func _exchange_pass() -> void:
+	var ltr := (tick_count % 2 == 0)
+	for y in height:
+		if ltr:
+			for x in range(width - 1):
+				_exchange_pair(idx(x, y), idx(x + 1, y))
+		else:
+			for x in range(width - 2, -1, -1):
+				_exchange_pair(idx(x, y), idx(x + 1, y))
+
+## Trade both gases between horizontal neighbors a and b: per gas half the difference (capped by GAS_SWAP), taking from both givers BEFORE any add — a full tile's inflow is covered by its own simultaneous outflow — and refused adds refund the giver, so scarce capacity pinches but never destroys.
+func _exchange_pair(a: int, b: int) -> void:
+	var hold_a := pk.get_pool(a, GAS_MATS[0]) + pk.get_pool(a, GAS_MATS[1])
+	var hold_b := pk.get_pool(b, GAS_MATS[0]) + pk.get_pool(b, GAS_MATS[1])
+	if hold_a == 0 or hold_b == 0:
+		return   # a gas-empty neighbor is creep's business; a gas|liquid face has no ratios to trade
+	var amt := [0, 0]
+	var to_b := [false, false]
+	for k in GAS_MATS.size():
+		var m: int = GAS_MATS[k]
+		var d := pk.get_pool(a, m) - pk.get_pool(b, m)
+		if absi(d) < 2:
+			continue   # terminal granularity: neighbors may rest one unit apart (creep's convention)
+		amt[k] = mini(absi(d) >> 1, GAS_SWAP)
+		to_b[k] = d > 0
+	for k in GAS_MATS.size():
+		if amt[k] > 0:
+			pk.take_pool(a if to_b[k] else b, GAS_MATS[k], amt[k])
+	for k in GAS_MATS.size():
+		if amt[k] == 0:
+			continue
+		var m: int = GAS_MATS[k]
+		var giver := a if to_b[k] else b
+		var taker := b if to_b[k] else a
+		var accepted := pk.add_pool(taker, m, amt[k])
+		if accepted < amt[k]:
+			pk.add_pool(giver, m, amt[k] - accepted)   # refused units return to the giver — the refund always fits, it just freed that much room
+		flow_stamp(taker, FlowDir.RIGHT if to_b[k] else FlowDir.LEFT, accepted)

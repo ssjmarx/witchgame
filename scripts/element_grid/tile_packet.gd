@@ -15,9 +15,10 @@ enum Mat { WATER, OIL, ACID, LAVA, SMOKE, STEAM }
 const MAT_COUNT := 6
 
 ## Ledger rows. The first six line up with Mat; the three subtile rows
-## follow in column order (stone_s, soil_s, ice_s) == SUB_SINK order.
-enum Led { WATER, OIL, ACID, LAVA, SMOKE, STEAM, STONE_S, SOIL_S, ICE_S, DAMP }
-const LED_COUNT := 10
+## follow in column order (stone_s, soil_s, ice_s) == SUB_SINK order; FUEL
+## closes the book (appended, never inserted -- row indices are arithmetic).
+enum Led { WATER, OIL, ACID, LAVA, SMOKE, STEAM, STONE_S, SOIL_S, ICE_S, DAMP, FUEL }
+const LED_COUNT := 11
 
 # -- Tuning tables -----------------------------------------------------------
 
@@ -54,6 +55,7 @@ const K_SOIL := 1
 const K_ICE := 2
 
 const DAMP_PER_SUB := 32   # damp capacity per soil subtile (ruling: 1:1 with water and steam)
+const WOOD_DAMP_CAP := 64   # a wood tile holds damp flat -- half a full soil tile (128); render-darkens past half
 const TAG_WET := 1        # body-tag bits; poisoned/tainted/holy/fertile arrive with the body-state system
 
 # -- Columns -----------------------------------------------------------------
@@ -74,16 +76,19 @@ var smoke := PackedByteArray()
 var steam := PackedByteArray()
 var damp := PackedByteArray()
 var tags := PackedByteArray()
+var fuel := PackedByteArray()    # burnable energy attached to solids -- outside the pool, own ledger row
+var fire_s := PackedByteArray()  # fire subtile bits -- overlay state: unbooked, displaces nothing
 
 var _booked := PackedInt64Array()   # ledger: booked totals, one per row
 var _present := PackedInt32Array()   # per material: count of tiles holding nonzero units -- the absent-pass gate
+var _fire_present := 0   # tiles holding fire bits -- has_fire()'s gate (set_fire keeps it honest)
 
 ## Allocate the w×h grid: every column resized, ledger zeroed.
 func _init(p_w: int, p_h: int) -> void:
 	w = p_w
 	h = p_h
 	var n := w * h
-	# Thirteen boring resizes, no clever loop: a packed array passed through a temporary may not resize the member. Boring is bulletproof.
+	# Sixteen boring resizes, no clever loop: a packed array passed through a temporary may not resize the member. Boring is bulletproof.
 	terrain.resize(n)
 	stone_s.resize(n)
 	soil_s.resize(n)
@@ -98,6 +103,8 @@ func _init(p_w: int, p_h: int) -> void:
 	_present.resize(MAT_COUNT)
 	damp.resize(n)
 	tags.resize(n)
+	fuel.resize(n)
+	fire_s.resize(n)
 	clear()
 
 ## Zero every column and the ledger.
@@ -116,6 +123,9 @@ func clear() -> void:
 	_present.fill(0)
 	damp.fill(0)
 	tags.fill(0)
+	fuel.fill(0)
+	fire_s.fill(0)
+	_fire_present = 0
 
 # -- Indexing ----------------------------------------------------------------
 
@@ -164,7 +174,7 @@ func set_sub(i: int, kind: int, n: int) -> int:
 		2: ice_s[i] = n
 	_book(Led.STONE_S + kind, POPCOUNT[n] - POPCOUNT[old])
 	# post-write: stranded damp drains with booking -- sim paths pre-carry it out, so this only catches tool writes (erase, brush, clear)
-	var cap := DAMP_PER_SUB * POPCOUNT[soil_s[i]]
+	var cap := damp_capacity(i)
 	if damp[i] > cap:
 		_book(Led.DAMP, cap - damp[i])
 		damp[i] = cap
@@ -307,8 +317,13 @@ func assert_all() -> bool:
 	if s_ice != _booked[Led.ICE_S]:
 		push_error("ledger drift ICE_S: booked %d, counted %d" % [_booked[Led.ICE_S], s_ice])
 		ok = false
+	var s_fuel := 0
+	for v in fuel: s_fuel += v
+	if s_fuel != _booked[Led.FUEL]:
+		push_error("ledger drift FUEL: booked %d, counted %d" % [_booked[Led.FUEL], s_fuel])
+		ok = false
 	for i in w * h:
-		# the four subtile cells are a shared budget across solid kinds -- two kinds may never claim one cell
+		# the four subtile cells are a shared budget across solid kinds -- two kinds may never claim one cell; fire bits ride above it, overlay by design
 		var overlap := POPCOUNT[stone_s[i]] + POPCOUNT[soil_s[i]] + POPCOUNT[ice_s[i]] - POPCOUNT[stone_s[i] | soil_s[i] | ice_s[i]]
 		if overlap != 0:
 			var q := xy_of(i)
@@ -318,7 +333,7 @@ func assert_all() -> bool:
 			var p := xy_of(i)
 			push_error("pool overflow at %d,%d: %d > %d" % [p.x, p.y, pool_total(i), pool_capacity(i)])
 			ok = false
-		if damp[i] > DAMP_PER_SUB * POPCOUNT[soil_s[i]]:
+		if damp[i] > damp_capacity(i):
 			var q2 := xy_of(i)
 			push_error("damp over capacity at %d,%d: %d" % [q2.x, q2.y, damp[i]])
 			ok = false
@@ -363,8 +378,10 @@ func clear_mat(m: int) -> void:
 func get_damp(i: int) -> int:
 	return damp[i]
 
-## Damp capacity at tile i: 32 per soil subtile; stone and ice subtiles hold none.
+## Damp capacity at tile i: 32 per soil subtile; a WOOD tile holds a flat 64 (half a full soil tile); everything else holds none.
 func damp_capacity(i: int) -> int:
+	if terrain[i] == T.WOOD:
+		return WOOD_DAMP_CAP
 	return DAMP_PER_SUB * POPCOUNT[soil_s[i]]
 
 ## Add up to amount of damp, clamped by capacity; returns units accepted (callers pre-compute, refused units are theirs).
@@ -427,3 +444,73 @@ func booked_pool_total() -> int:
 	for m in MAT_COUNT:
 		sum += _booked[m]
 	return sum
+
+# -- Fuel and fire -----------------------------------------------------------
+
+## Fuel held at tile i (0..255) -- burnable energy attached to solids, outside the content pool.
+func get_fuel(i: int) -> int:
+	return fuel[i]
+
+## Add up to amount of fuel at tile i, clamped to the 255 ceiling; returns units accepted.
+func add_fuel(i: int, amount: int) -> int:
+	if amount <= 0:
+		return 0
+	var accepted := mini(amount, POOL_MAX - fuel[i])
+	if accepted > 0:
+		fuel[i] += accepted
+		_book(Led.FUEL, accepted)
+	return accepted
+
+## Remove up to amount of fuel at tile i; returns units actually taken.
+func take_fuel(i: int, amount: int) -> int:
+	if amount <= 0:
+		return 0
+	var taken := mini(amount, fuel[i])
+	if taken > 0:
+		fuel[i] -= taken
+		_book(Led.FUEL, -taken)
+	return taken
+
+## Tool path (paint/erase): force tile i's fuel toward v, booked; 255 is the only ceiling, so no spill exists.
+func set_fuel(i: int, v: int) -> void:
+	var target := clampi(v, 0, POOL_MAX)
+	var delta := target - fuel[i]
+	if delta != 0:
+		fuel[i] = target
+		_book(Led.FUEL, delta)
+
+## Fresh recount of the fuel column -- row eleven's checksum.
+func fuel_total() -> int:
+	var sum := 0
+	for v in fuel: sum += v
+	return sum
+
+## Fire subtile bits at tile i, same nibble layout as the solid kinds; overlay state -- coexists with terrain, solid subtiles, and pool alike.
+func get_fire(i: int) -> int:
+	return fire_s[i]
+
+## Set the fire nibble at tile i -- god hands and the fire solver both route here, the single writer that keeps has_fire honest; no booking, fire is state not matter.
+func set_fire(i: int, n: int) -> void:
+	n = clampi(n, 0, NIBBLE_MAX)
+	var old := fire_s[i]
+	if old == n:
+		return
+	if old == 0:
+		_fire_present += 1
+	elif n == 0:
+		_fire_present -= 1
+	fire_s[i] = n
+
+## True when any tile holds fire bits -- the fire solver's absent-pass gate, _present's pattern.
+func has_fire() -> bool:
+	return _fire_present > 0
+
+## Zero the fuel column, booking the removal. (Clear/reset path.)
+func clear_fuel() -> void:
+	_book(Led.FUEL, -fuel_total())
+	fuel.fill(0)
+
+## Zero the fire nibbles and the present count. (Clear/reset path — overlay state, nothing booked.)
+func clear_fire() -> void:
+	fire_s.fill(0)
+	_fire_present = 0
