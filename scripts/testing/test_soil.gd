@@ -60,12 +60,12 @@ const PRESETS := {
 }
 
 var sand: GridSand
-var reactions: GridReactions
+var react: GridReactions
 
 ## Build the sand and reaction engines, bind the renderer's solid flow, load the spread demo.
 func _setup() -> void:
-	sand = GridSand.new(GRID_W, GRID_H, stone, water)
-	reactions = GridReactions.new(GRID_W, GRID_H, stone)
+	sand = room.sand
+	react = room.react
 	renderer.bind_sand(sand)
 	_load_preset(KEY_F1)
 
@@ -80,12 +80,6 @@ func _dose() -> void:
 		water.add_water(t.x, t.y, PAINT_DOSE)
 	elif paint == Paint.SOIL:
 		_brush_soil(t)
-
-## Advance solids, liquids, then reactions -- the movement systems settle, soak reads settled state, and the reaction tick owns the packet assert.
-func _tick_world() -> void:
-	sand.tick()
-	water.tick()
-	reactions.tick()
 
 ## Reset the sand engine along with the shared world.
 func _clear_world() -> void:

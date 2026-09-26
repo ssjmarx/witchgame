@@ -340,3 +340,12 @@ func _tag_pass() -> void:
 			pk.set_tag(i, TilePacket.TAG_WET, true)
 		elif d * 10 < cap * 3:
 			pk.set_tag(i, TilePacket.TAG_WET, false)
+
+## The ignition overlay, value-copied for a room snapshot; the timer is persistent, the suppression mask is not.
+func snapshot_ignition() -> PackedByteArray:
+	return _ignition.duplicate()
+
+## Write the ignition overlay back and blank the suppression mask -- it rebuilds from the fire bits on the next tick.
+func restore_ignition(b: PackedByteArray) -> void:
+	_ignition = b.duplicate()
+	_fire_near.fill(0)

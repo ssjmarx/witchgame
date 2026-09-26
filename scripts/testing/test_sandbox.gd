@@ -1,6 +1,6 @@
-## Shared harness for element test scenes: owns the grid trio, renderer, tick
-## heartbeat, input plumbing, and paint/carve helpers. Element scenes extend
-## this class and override the hooks (_setup, _dose, _tick_world, ...).
+## Shared harness for element test scenes: owns the room (the engine quartet,
+## aliased as stone/water for the scenes' existing reads), renderer, tick
+## heartbeat, input plumbing, and paint/carve helpers. Scenes override hooks.
 
 class_name TestSandbox
 extends Node2D
@@ -9,11 +9,13 @@ const GRID_W := 15        # tiles across
 const GRID_H := 15        # tiles down
 const TILE := 16          # pixels per tile
 const TEST_TICKS := 3000  # ticks each self-test runs before checking
+const SANDBOX_SEED := 1   # the lab room's PRNG seed -- no consumer until the bridge lab (E4)
 
 # materials any sandbox can lay down; a scene exposes the subset it wants (the fire lab added wood, the gases, and damp authoring)
 enum Paint { STONE, WATER, SOIL, OIL, WOOD, STEAM, SMOKE, DAMP }
 
-var stone: GridStone
+var room: Room
+var stone: GridStone   # aliases into room -- every existing scene read keeps working
 var water: GridWater
 var renderer: ElementRenderer
 var sprite: Sprite2D
@@ -26,8 +28,9 @@ var _last_info := ""  # last HUD text; skips label writes when unchanged
 
 ## Build the shared world, wire timer and signals, then hand off to _setup.
 func _ready() -> void:
-	stone = GridStone.new(GRID_W, GRID_H)
-	water = GridWater.new(GRID_W, GRID_H, stone)
+	room = Room.new(GRID_W, GRID_H, SANDBOX_SEED)
+	stone = room.stone
+	water = room.water
 	renderer = ElementRenderer.new(stone, water)
 	sprite = Sprite2D.new()
 	sprite.centered = false
@@ -54,14 +57,13 @@ func _on_tick() -> void:
 func _dose() -> void:
 	pass
 
-## Override: advance the sim one tick in fixed order (order is a ruling).
+## Override: advance the sim one tick -- the default runs the full engine ruling, owned by Room.tick (scenes no longer duplicate it).
 func _tick_world() -> void:
-	water.tick()
+	room.tick()
 
-## Override: reset everything the scene owns beyond the base pair.
+## Override: reset beyond the blank world; the default is Room.reset (every column, book, overlay, counter).
 func _clear_world() -> void:
-	stone.clear()
-	water.clear()
+	room.reset()
 
 ## Override: handle held-mouse strokes; return true when the picture changed.
 func _paint_stroke(_t: Vector2i) -> bool:
@@ -179,10 +181,11 @@ func _on_levels_changed(_cells) -> void:
 ## Headless example runner, shared by every acceptance suite: carve rows into a fresh full engine stack, run optional god-hand setup before the snapshot, tick to equilibrium under a per-engine drift watch, then check + pool legality + policy-driven conservation + subtile mass. Drift reports on every failure, so expectation bugs and leaks never mask each other.
 @warning_ignore("shadowed_variable_base_class")
 func _run_example(name: String, rows: Array, check: Callable, setup: Callable) -> void:
-	var t_stone := GridStone.new(GRID_W, GRID_H)
-	var t_water := GridWater.new(GRID_W, GRID_H, t_stone)
-	var t_sand := GridSand.new(GRID_W, GRID_H, t_stone, t_water)
-	var t_react := GridReactions.new(GRID_W, GRID_H, t_stone)
+	var t_room := Room.new(GRID_W, GRID_H, SANDBOX_SEED)
+	var t_stone := t_room.stone
+	var t_water := t_room.water
+	var t_sand := t_room.sand
+	var t_react := t_room.react
 	var o := _carve_preset(t_stone, t_water, rows)
 	if setup.is_valid():
 		setup.call([t_stone, t_water, o, t_sand, t_react])
@@ -194,6 +197,7 @@ func _run_example(name: String, rows: Array, check: Callable, setup: Callable) -
 	var s0 := PackedInt32Array()
 	for k in 3:
 		s0.append(t_sand.total(k))
+		# the ruling's instrumented fork: attribution needs the engines called separately
 	for t in run_ticks:
 		var before := t_stone.packet.pool_damp_total()
 		t_sand.tick()

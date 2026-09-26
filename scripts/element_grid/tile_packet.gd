@@ -322,6 +322,10 @@ func assert_all() -> bool:
 	if s_fuel != _booked[Led.FUEL]:
 		push_error("ledger drift FUEL: booked %d, counted %d" % [_booked[Led.FUEL], s_fuel])
 		ok = false
+	var s_damp := damp_total()
+	if s_damp != _booked[Led.DAMP]:
+		push_error("ledger drift DAMP: booked %d, counted %d" % [_booked[Led.DAMP], s_damp])
+		ok = false
 	for i in w * h:
 		# the four subtile cells are a shared budget across solid kinds -- two kinds may never claim one cell; fire bits ride above it, overlay by design
 		var overlap := POPCOUNT[stone_s[i]] + POPCOUNT[soil_s[i]] + POPCOUNT[ice_s[i]] - POPCOUNT[stone_s[i] | soil_s[i] | ice_s[i]]
@@ -514,3 +518,66 @@ func clear_fuel() -> void:
 func clear_fire() -> void:
 	fire_s.fill(0)
 	_fire_present = 0
+
+# -- Snapshot census (world.md §8) ------------------------------------------
+
+## The persistent column count -- the snapshot census: terrain, three subtile nibbles, six pool, damp, tags, fuel, fire bits.
+const COL_COUNT := 14
+
+## Live reference to persistent column i, census order (0..COL_COUNT-1) -- duplicate before storing it anywhere: packed arrays are references.
+func column(i: int) -> PackedByteArray:
+	match i:
+		0: return terrain
+		1: return stone_s
+		2: return soil_s
+		3: return ice_s
+		4: return water
+		5: return oil
+		6: return acid
+		7: return lava
+		8: return smoke
+		9: return steam
+		10: return damp
+		11: return tags
+		12: return fuel
+		_: return fire_s
+
+## Point persistent column i at bytes (restore path); the write bypasses books, present counts, and fire_present -- the caller rebuilds them.
+func load_column(i: int, b: PackedByteArray) -> void:
+	match i:
+		0: terrain = b
+		1: stone_s = b
+		2: soil_s = b
+		3: ice_s = b
+		4: water = b
+		5: oil = b
+		6: acid = b
+		7: lava = b
+		8: smoke = b
+		9: steam = b
+		10: damp = b
+		11: tags = b
+		12: fuel = b
+		_: fire_s = b
+
+## Recompute every booked row from fresh recounts -- the restore path's ledger rebuild; green asserts prove maintained == recounted, so this arrives consistent.
+func rebuild_books() -> void:
+	for m in MAT_COUNT:
+		_booked[m] = mat_total(m)
+	for k in 3:
+		_booked[Led.STONE_S + k] = sub_total(k)
+	_booked[Led.DAMP] = damp_total()
+	_booked[Led.FUEL] = fuel_total()
+
+## Recompute the present counts from the columns -- the absent-pass gates' bookkeeping, bypassed by wholesale restore writes; restore-time only, never per tick.
+func rebuild_present() -> void:
+	for m in MAT_COUNT:
+		var count := 0
+		for i in w * h:
+			if get_pool(i, m) > 0:
+				count += 1
+		_present[m] = count
+	_fire_present = 0
+	for i in w * h:
+		if fire_s[i] != 0:
+			_fire_present += 1

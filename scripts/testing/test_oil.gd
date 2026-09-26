@@ -58,12 +58,12 @@ const PRESETS := {
 }
 
 var sand: GridSand
-var reactions: GridReactions
+var react: GridReactions
 
 ## Build the sand and reaction engines, load the flip demo.
 func _setup() -> void:
-	sand = GridSand.new(GRID_W, GRID_H, stone, water)
-	reactions = GridReactions.new(GRID_W, GRID_H, stone)
+	sand = room.sand
+	react = room.react
 	_load_preset(KEY_F1)
 
 ## Tick-boundary dosing: held-mouse water or oil, dosed per material.
@@ -77,12 +77,6 @@ func _dose() -> void:
 		water.add_water(t.x, t.y, PAINT_DOSE)
 	elif paint == Paint.OIL:
 		water.add_liquid(t.x, t.y, TilePacket.Mat.OIL, PAINT_DOSE)
-
-## Advance solids, liquids, then reactions — the engine ruling; reactions own the packet assert.
-func _tick_world() -> void:
-	sand.tick()
-	water.tick()
-	reactions.tick()
 
 ## Reset the sand engine along with the shared world.
 func _clear_world() -> void:

@@ -69,12 +69,12 @@ const PRESETS := {
 }
 
 var sand: GridSand
-var reactions: GridReactions
+var react: GridReactions
 
 ## Build the full engine stack and load the rise demo.
 func _setup() -> void:
-	sand = GridSand.new(GRID_W, GRID_H, stone, water)
-	reactions = GridReactions.new(GRID_W, GRID_H, stone)
+	sand = room.sand
+	react = room.react
 	_load_preset(KEY_F1)
 
 ## Tick-boundary dosing: held-mouse liquids and gases at PAINT_DOSE, soil one subtile, damp at DAMP_DOSE, wood whole tiles.
@@ -102,17 +102,11 @@ func _dose() -> void:
 		_:
 			pass
 
-## Advance solids, liquids, then reactions — the engine ruling; reactions own the packet assert.
-func _tick_world() -> void:
-	sand.tick()
-	water.tick()
-	reactions.tick()
-
 ## Reset the sand engine, the damp books, the fire columns, and the reaction overlays along with the shared world.
 func _clear_world() -> void:
 	super()
 	sand.clear()
-	reactions.clear()
+	react.clear()
 	stone.packet.clear_damp()
 	stone.packet.clear_fuel()
 	stone.packet.clear_fire()
@@ -158,7 +152,7 @@ func _god_ignite() -> void:
 	var t := _hover_tile()
 	if t.x < 0:
 		return
-	if not reactions.ignite(t.x, t.y):
+	if not react.ignite(t.x, t.y):
 		print("hiss -- damp fuel refuses the match")
 
 ## Scene keys: F1-F5, F7, F9-F12 demos, 1-8 select material, I ignites at hover, K runs both suites.
@@ -202,7 +196,7 @@ func _info_line(t: Vector2i) -> String:
 	if t.x >= 0:
 		var i := stone.idx(t.x, t.y)
 		info += "   fuel %d   fire %d   ign %d   steam %d   smoke %d   damp %d/%d" % [
-			stone.packet.get_fuel(i), stone.packet.get_fire(i), reactions.get_ignition(t.x, t.y),
+			stone.packet.get_fuel(i), stone.packet.get_fire(i), react.get_ignition(t.x, t.y),
 			stone.packet.get_pool(i, TilePacket.Mat.STEAM),
 			stone.packet.get_pool(i, TilePacket.Mat.SMOKE),
 			stone.packet.get_damp(i), stone.packet.damp_capacity(i)]
@@ -213,7 +207,7 @@ func _load_preset(keycode: int) -> void:
 	sand.clear()
 	water.clear()
 	stone.clear()
-	reactions.clear()
+	react.clear()
 	stone.packet.clear_damp()
 	stone.packet.clear_fuel()
 	stone.packet.clear_fire()

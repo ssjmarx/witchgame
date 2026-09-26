@@ -35,7 +35,7 @@ var height: int
 var water: GridWater
 
 var _sub := PackedByteArray()  # expanded w*2 x h*2 material codes, refilled each tick
-var _tick_count := 0
+var tick_count := 0
 
 var _flow_mag := PackedByteArray()
 var _flow_best := PackedByteArray()
@@ -67,14 +67,14 @@ func clear() -> void:
 		pk.set_sub(i, TilePacket.K_STONE, 0)
 		pk.set_sub(i, TilePacket.K_SOIL, 0)
 		pk.set_sub(i, TilePacket.K_ICE, 0)
-	_tick_count = 0
+	tick_count = 0
 	_sub.fill(0)
 
 # -- Tick pipeline ------------------------------------------------------------
 
 ## One tick: expand, run the sand pass, repack and book. The paired water tick owns the packet assert -- its displacement pass resolves repack's deficits same-tick.
 func tick() -> void:
-	_tick_count += 1
+	tick_count += 1
 	# tick head: last tick's flow dies before any new move stamps (water's pattern)
 	_flow_mag.fill(0)
 	_flow_best.fill(0)
@@ -126,7 +126,7 @@ func _repack() -> void:
 func _pass_all() -> void:
 	var w2 := width * 2
 	var h2 := height * 2
-	var ltr := (_tick_count % 2 == 0)
+	var ltr := (tick_count % 2 == 0)
 	for sy in range(h2 - 1, -1, -1):
 		if ltr:
 			for sx in w2:
@@ -145,7 +145,7 @@ func _sub_pass(sx: int, sy: int) -> void:
 	var d := FALL[kind] if not _in_liquid(sx, sy) else TilePacket.SUB_SINK[kind]
 	if d <= 0:
 		return
-	var flip := -1 if (_tick_count % 2 == 0) else 1
+	var flip := -1 if (tick_count % 2 == 0) else 1
 	var cy := sy
 	for _step in d:
 		if not _try_move(sx, cy, sx, cy + 1, kind):
