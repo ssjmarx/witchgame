@@ -87,8 +87,7 @@ func _handle_key(k: int) -> bool:
 		KEY_2:
 			paint = Paint.WATER
 		KEY_K:
-			run_self_tests()
-			run_packet_tests()
+			run_suite()
 		_:
 			return false
 	return true
@@ -267,11 +266,14 @@ func run_packet_tests() -> void:
 	print("── done ──")
 
 ## PASS/FAIL runner for the packet tests (mirror of _test, no carving).
+@warning_ignore("shadowed_variable_base_class")
 func _ptest(name: String, fn: Callable) -> void:
 	var err: String = fn.call()
 	if err == "":
+		suite_pass += 1
 		print("PASS  %s" % name)
 	else:
+		suite_fail += 1
 		print("FAIL  %s — %s" % [name, err])
 
 ## Carve one example fresh, run it to equilibrium, report PASS/FAIL/leak.
@@ -285,8 +287,19 @@ func _test(name: String, preset_key: int, check: Callable) -> void:
 		t_water.tick()
 	var err: String = check.call([t_stone, t_water, o])
 	if err != "":
+		suite_fail += 1
 		print("FAIL  %s — %s" % [name, err])
 	elif t_water.total() != t0:
+		suite_fail += 1
 		print("FAIL  %s — leaked %d units" % [name, t0 - t_water.total()])
 	else:
+		suite_pass += 1
 		print("PASS  %s" % name)
+
+## The lab's whole suite behind one door: K and run_all both call this.
+func run_suite() -> bool:
+	suite_pass = 0
+	suite_fail = 0
+	run_self_tests()
+	run_packet_tests()
+	return suite_fail == 0

@@ -26,6 +26,9 @@ var run_ticks := TEST_TICKS   # ticks per self-test; timing tests run short and 
 var drift_watch := true       # per-engine pool+damp attribution; scenes with in-tick matter creation (fire's smoke) turn it off
 var _last_info := ""  # last HUD text; skips label writes when unchanged
 
+var suite_pass := 0   # examples passed since the last run_suite reset -- run_all reads the tally
+var suite_fail := 0   # examples failed since the last run_suite reset -- the regression verdict
+
 ## Build the shared world, wire timer and signals, then hand off to _setup.
 func _ready() -> void:
 	room = Room.new(GRID_W, GRID_H, SANDBOX_SEED)
@@ -225,6 +228,7 @@ func _run_example(name: String, rows: Array, check: Callable, setup: Callable) -
 		if t_sand.total(k) != s0[k]:
 			sub_txt = " [subtile mass kind %d: %d -> %d]" % [k, s0[k], t_sand.total(k)]
 	if err == "" and drift_txt == "" and sub_txt == "":
+		suite_pass += 1
 		print("PASS  %s" % name)
 		return
 	var why := err
@@ -232,8 +236,9 @@ func _run_example(name: String, rows: Array, check: Callable, setup: Callable) -
 		why = "conservation drifted"
 	elif why == "" and sub_txt != "":
 		why = "subtile mass changed"
+	suite_fail += 1
 	print("FAIL  %s -- %s%s%s" % [name, why, drift_txt, sub_txt])
-	
+
 
 ## Conservation policy for the acceptance runner: every material but water is individually constant, and water pairs with damp (soak's sanctioned 1:1 channel). Scenes whose reactions transform matter override with their own sanctioned channels.
 func drift_report(w0: PackedInt32Array, pk: TilePacket) -> String:
@@ -250,3 +255,8 @@ func drift_report(w0: PackedInt32Array, pk: TilePacket) -> String:
 		return ""
 	return " [drift: " + ", ".join(parts) + "]"
 	
+## Override: run this lab's whole acceptance suite and return false when any example failed; K and the headless runner share this one path.
+func run_suite() -> bool:
+	suite_pass = 0
+	suite_fail = 0
+	return suite_fail == 0

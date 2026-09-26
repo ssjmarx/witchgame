@@ -180,8 +180,7 @@ func _handle_key(k: int) -> bool:
 		KEY_I:
 			_god_ignite()
 		KEY_K:
-			run_gas_tests()
-			run_fire_tests()
+			run_suite()
 		_:
 			return false
 	return true
@@ -566,3 +565,11 @@ func run_fire_tests() -> void:
 	run_ticks = TEST_TICKS
 	drift_watch = true   # the fire family creates matter in-tick; the watch ends after them
 	print("== done ==")
+
+## The lab's whole suite behind one door: K and run_all both call this.
+func run_suite() -> bool:
+	suite_pass = 0
+	suite_fail = 0
+	run_gas_tests()
+	run_fire_tests()
+	return suite_fail == 0

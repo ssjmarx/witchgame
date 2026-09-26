@@ -113,7 +113,7 @@ func _handle_key(k: int) -> bool:
 		KEY_3:
 			paint = Paint.SOIL
 		KEY_K:
-			run_soil_tests()
+			run_suite()
 		_:
 			return false
 	return true
@@ -324,3 +324,10 @@ func run_soil_tests() -> void:
 	_run_example("ST9  wet tag gains above half capacity", PRESETS[KEY_F11], check_tag_on, damp_at.call(65))
 	_run_example("ST10 band damp never gains the tag", PRESETS[KEY_F11], check_tag_off, damp_at.call(40))
 	print("== done ==")
+
+## The lab's whole suite behind one door: K and run_all both call this.
+func run_suite() -> bool:
+	suite_pass = 0
+	suite_fail = 0
+	run_soil_tests()
+	return suite_fail == 0

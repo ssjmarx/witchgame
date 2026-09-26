@@ -113,7 +113,7 @@ func _handle_key(k: int) -> bool:
 		KEY_3:
 			paint = Paint.OIL
 		KEY_K:
-			run_oil_tests()
+			run_suite()
 		_:
 			return false
 	return true
@@ -344,3 +344,10 @@ func run_oil_tests() -> void:
 	_run_example("UT3  a sealed chamber refuses the trade", PRESETS[KEY_F9], check_sealed, Callable())
 	_run_example("UT4  oil overtops, water never follows", PRESETS[KEY_F10], check_overtop, Callable())
 	print("== done ==")
+
+## The lab's whole suite behind one door: K and run_all both call this.
+func run_suite() -> bool:
+	suite_pass = 0
+	suite_fail = 0
+	run_oil_tests()
+	return suite_fail == 0
