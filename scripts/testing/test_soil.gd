@@ -261,10 +261,10 @@ func run_soil_tests() -> void:
 	var check_sealed := func(s: Array) -> String:
 		var pk: TilePacket = s[0].packet
 		var o: Vector2i = s[2]
-		if pk.get_sub(pk.idx(o.x, o.y + 1), TilePacket.K_SOIL) != 15:
-			return "soil left its tile in a sealed column"
-		if pk.get_pool(pk.idx(o.x, o.y + 2), TilePacket.Mat.WATER) != 255:
-			return "water moved in a sealed column"
+		if pk.get_sub(pk.idx(o.x, o.y + 2), TilePacket.K_SOIL) != 15:
+			return "soil did not sink through the sealed column"
+		if pk.get_pool(pk.idx(o.x, o.y + 1), TilePacket.Mat.WATER) < 250:
+			return "water did not rise into the vacated column"
 		return ""
 		
 	var setup_wet := func(s: Array) -> void:
@@ -323,7 +323,22 @@ func run_soil_tests() -> void:
 	_run_example("ST8  wet mortar holds the column", PRESETS[KEY_F10], check_mortar, setup_wet)
 	_run_example("ST9  wet tag gains above half capacity", PRESETS[KEY_F11], check_tag_on, damp_at.call(65))
 	_run_example("ST10 band damp never gains the tag", PRESETS[KEY_F11], check_tag_off, damp_at.call(40))
+	_st_sealed_sort()
 	print("== done ==")
+
+## ST11: the sealed chamber sorts -- soil sinks through brim-full sealed water, the displaced liquid rising into the space each subtile vacates; soil drinks its own one-unit squeeze.
+func _st_sealed_sort() -> void:
+	_run_example("ST11 the sealed chamber sorts by density", ["sssss", "sddds", "swwws", "swwws", "sssss"], func(args) -> String:
+		var t_stone: GridStone = args[0]
+		var pk := t_stone.packet
+		var o: Vector2i = args[2]
+		var floor_mid := pk.idx(o.x + 2, o.y + 3)
+		if pk.get_sub(floor_mid, TilePacket.K_SOIL) != 15:
+			return "soil %d at the chamber floor, expected 15" % pk.get_sub(floor_mid, TilePacket.K_SOIL)
+		var above := pk.idx(o.x + 2, o.y + 2)
+		if pk.get_pool(above, TilePacket.Mat.WATER) < 200:
+			return "water %d above the settled soil, expected a near-full column" % pk.get_pool(above, TilePacket.Mat.WATER)
+		return "", Callable())
 
 ## The lab's whole suite behind one door: K and run_all both call this.
 func run_suite() -> bool:

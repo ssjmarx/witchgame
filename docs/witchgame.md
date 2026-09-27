@@ -1,12 +1,19 @@
-# WITCH DEMO — Vertical Slice GDD v3.0
+# WITCH DEMO — Vertical Slice GDD v3.1
 
-*Delta doc on `world.md` v1.5. Sibling of `magicalgirlgame.md` v2.0 and `amazongame.md` v1.0. The engine — room model, CA, bridge, actor shell, contact contract, lasso core, doors, pockets, death and lives machinery, rendering, light rig, level format — is inherited from there. This doc owns her verbs, her rooms, her policy, and her roster. Where this doc and `world.md` disagree about engine behavior, `world.md` wins.*
+*Delta doc on `world.md` v1.6. Sibling of `magicalgirlgame.md` v2.1 and `amazongame.md` v1.0. The engine — room model, CA, bridge, actor shell, contact contract, lasso core, doors, pockets, death and lives machinery, rendering, light rig, level format — is inherited from there. This doc owns her verbs, her rooms, her policy, and her roster. Where this doc and `world.md` disagree about engine behavior, `world.md` wins.*
 
 **Goal:** one contiguous dungeon of seven chambers where every verb, element, container, and enemy behavior is operational with placeholder art. If this slice is fun with gray boxes, the game exists.
 
 **Pitch:** a Game Boy Color–styled puzzle platformer. (Internal touchstones live outside the pitch.)
 
 **Inheritance map:** §1 tech (world §1) · §2 data (world §2) · §3 sim (world §3) · §4 rendering (world §9) · lasso core (world §7) · enemy frame (world §6) · doors/death/lives (world §8) · smolder (world §4.4) · thermal exchanges (world §4.2).
+
+**Changelog v3.1 — the bridge lab lands her substrate (world v1.6)**
+
+- **She walks.** `Witch` is code: a `CharacterBody2D` on a `ThermalBody`, the 8×24 hitbox (a subtile wide, three tall), the 10px jump SACRED in engine code, the capacity-aware wade line, swim (stroke = jump, the crouch dive), the outlined sheet driving her anim state — and she never writes a tile; everything crosses the bridge. The witch lab (`test_witch.tscn`) is her playground: spawn/teleport (N), paint stone/water/wood/soil/damp, ignite (I), live heat/wetness/family readout
+- **The bridge carries her now** (world §4 shipped): ABSORB/DRIP/BOIL/CROSS-TALK/DRY, fire contact +4/t — the mop verb, the steam bomb, and the fire-walk budget are engine law with acceptance proofs (BT1–BT14). Her panic clock, the smolder stimulus, and her verbs (lasso, beam, tags) remain game-side
+- **Wetness is 1:1 now — the 1:1:1:1 retune is law** (world v1.6): water, steam, damp, and wetness are one unit; her meter is 0–64 and v3.0's "0–254 even" body is superseded. The carry window halves (~16 s at saturation, DRIP 4/s) — the knob stays the DRIP rate, never a second lattice. C2's mop-and-drip beat gets faster to drain; author accordingly
+- Her dungeons have their memory now: the rooms lab (RT1–RT4) shipped snapshot/restore and the frozen unobserved room (world §8's first half), and the collision mirror keeps her floors honest — fire burns them out from under her
 
 **Changelog v3.0**
 
@@ -102,12 +109,12 @@ TRAIL = 5 s                       # her breadcrumb extension of the engine ring
 
 **The jump.** JUMP_HEIGHT = 10, SACRED — margin over the 8px subtile step. The 16px ledge in C0 remains unjumpable; the joke survives. Coyote time, jump buffering, ledge tolerance: in.
 
-**Locomotion through liquids (inherited):** ≥128 liquid in her feet tile → half speed; submerged → swim (stroke = jump, 10px surface hop, no air meter — air is gated, not simulated). Oil is swimmable and grants no wetness. FLOW and wind push her, capped vs. walk speed.
+**Locomotion through liquids (inherited; shipped at the bridge lab):** the capacity-aware wade line (half the tile's free capacity in liquid — a soil-bottomed pool reads true); submerged → swim (stroke = jump, the crouch dive in code, 10px surface hop, no air meter — air is gated, not simulated). Oil is swimmable and grants no wetness (bridge-side, still design). FLOW and wind push her, capped vs. walk speed (game-side, pending).
 
 **The panic system (v2).** One clock, two feeders, one vulnerable calm:
 
 - **Hits** — enemy contact, spike tops, eel shock — knock her back, flash her hot (P1 row), and force panic: 1 s per hit, breadcrumbs reversed, away from what hit her. Panic accrues the clock 1:1 while she's in it
-- **Fire contact** pushes the clock at **1× dry, ½× while her wetness > 0** — the steam budget. A saturated witch has ~10 s of fire in her; a dry one has 5. When the hiss stops, the clock doubles
+- **Fire contact** pushes the clock at **1× dry, ½× while her wetness > 0** — the steam budget. A saturated witch has ~5 s of fire in her at the shipped 1:1 body (64 wetness against ~12 wetness/s under flame — cross-talk 8, drip 4; the old ~10 s was priced on the retired 254 meter); a dry one has 5. When the hiss stops, the clock doubles
 - **Panic behaviors:** release capture, drop carried pots, flee the breadcrumb trail at 70 px/s
 - **Panic ends:** still touching fire → **CRISP** (fire death, same presentation family as KO). Otherwise → **recovery frames**: 0.75 s, a brief getting-herself-together animation, clock frozen. A hit or fire during recovery resumes panic *from the frozen value* — the ratchet. Chained pressure is how she dies, never a single mistake
 - **After recovery**, the clock drains at 1×. The dungeon wants her calm
@@ -120,7 +127,7 @@ TRAIL = 5 s                       # her breadcrumb extension of the engine ring
 - She **melts ice underfoot** (16 water-eq/s) and **boils puddles** by the tier table
 - She sheds heat only as steam: cross-talk off her own wetness, pool water, rain, or a held wet enemy leaking into her tile. The puddle beyond the flames is the heat dump — that is the fire-walk license, reframed and kept
 
-**Her wetness (the mop-and-drip verb, universalized).** ABSORB by tier — she can mop a puddle dry (a full tile instantly; a film takes patience, and the tiers are honest about which). SATURATED (254) carries ~32 s of drip — she chooses where it lands by standing there, and the randomized drip is lumpy by design. Standing in rain soaks her. She is a timed water carrier, still; the meter is the drip, still; fire zones burn off her cargo, now at half-rate panic as payment.
+**Her wetness (the mop-and-drip verb, universalized).** ABSORB by tier — she can mop a puddle dry (a full tile instantly; a film takes patience, and the tiers are honest about which). SATURATED (64 since the 1:1 retune) carries ~16 s of drip — she chooses where it lands by standing there, and the randomized drip is lumpy by design. Standing in rain soaks her. She is a timed water carrier, still; the meter is the drip, still; fire zones burn off her cargo, now at half-rate panic as payment.
 
 **Conductivity:** wet is a wire (world §3). The same puddle that is fire-walk license is electrocution risk — the eel's shock is a hit.
 
@@ -253,7 +260,7 @@ Engine stages E0–E5 are world.md's; E5 ships in two cuts — ambient+omni earl
 - **M2 — Water** *(needs E1)*: GridWater integration + flow export + the wick rule + drizzle condensation + chamber restore. C3's pool and the aqueduct beat
 - **M2.5 — Materials** *(needs E2)*: soil subtiles (nibble CA, damp front, mortar), stone subtiles, oil, acid + decay, glaze, lava, ice. Reaction matrix + the ledger
 - **M3 — Light deep-dive** *(needs E5-cut-2)*: binary beam + transition, focus bands, LIT mask, smolder integration (stimulus flag → CA timer → fizzle grind), steerable growth. C5 testable in isolation
-- **M4 — Witch thermal + panic** *(needs E4)*: swim, wade, ABSORB/DRIP on her, panic v2 (recovery frames, resume-from-value, steam budget), KO, CRISP, spike bounce, heat-from-fire and its consequences. C3 playable end-to-end
+- **M4 — Witch thermal + panic** *(needs E4 — and its substrate is code since the bridge lab: swim, wade, ABSORB/DRIP/BOIL/CROSS-TALK/DRY run on her now, world v1.6; the panic machinery remains)*: panic v2 (recovery frames, resume-from-value, steam budget), KO, CRISP, spike bounce, heat-from-fire and its consequences. C3 playable end-to-end
 - **M5 — Pots + remaining enemies** *(needs E3/E4)*: pot interior, the fill verb, capture rules, break/buoyancy, wisp (smolder-based), turtle, breeze (wind authored or stubbed), eel + conductivity, botanical triggers. C3–C5 real
 - **M6 — Meta** *(needs E4)*: pressure plate, paper tags (fuel objects, smolderable, stake-on-death), plumb bob, lives-as-secrets, global reset / the ritual, C6 + the waterfall, the opening cinematic. Slice complete
 
@@ -318,3 +325,4 @@ LANTERN_BUOY = <tune> · WISP_STICK = 20 s · EEL_ZAP = 20 s
 - **Wisp retiming:** the 4 s telegraph changes C2's bridge beat from instant to warned. Retime the panic-run geometry so the lesson (bridges catch) survives the fairness
 - **The eel's shock:** spec'd as a hit (knockback + 1 s panic) through the wet body. Verify a wet witch holding the eel doesn't shock *herself* by her own wetness — the discharge should travel the pool's body graph, and her wetness makes her a node, not a source
 - **C2 puddle authoring:** mop-and-drip must read. Author the puddle ≥128 water (the fast tier) — a film mops at 4/s and the verb dies of boredom
+- **The steam budget's endurance was priced on the dead meter:** the "~10 s of fire in her" number assumed 254 wetness on the 2:1 lattice; the shipped body is 64 at 1:1 (≈5 s under flame — cross-talk 8 + drip 4). Retime FIRE_PANIC's wetness window and the C2 panic-run geometry at M4; the knobs are DRIP, FIRE_PANIC, and WETNESS_MAX, never a second lattice

@@ -1,10 +1,20 @@
-# `world.md` — THE WORLD: Shared Engine & Simulation GDD v1.5
+# `world.md` — THE WORLD: Shared Engine & Simulation GDD v1.6
 
-*The foundation under the three-game family. The witch doc, the magical girl doc, and the Amazon doc are deltas on this one; where a game doc disagrees with this doc about engine behavior, this doc wins. Where this doc and the code disagree, the code wins — `TilePacket`, `GridWater`, `GridSand`, and `GridReactions` are already code, and the shipped sections below are written from them.*
+*The foundation under the three-game family. The witch doc, the magical girl doc, and the Amazon doc are deltas on this one; where a game doc disagrees with this doc about engine behavior, this doc wins. Where this doc and the code disagree, the code wins — `TilePacket`, `GridWater`, `GridSand`, `GridReactions`, `Room`, and `ActorBridge` are already code, and the shipped sections below are written from them.*
 
 **Scope.** This doc owns: the room model, the cellular automata, the bridge, the actor shell and contact contract, the enemy frame, the lasso core, doors, pockets, death and lives machinery, the rendering and light rig, the level format, and the generator/checker framework. The game docs own: verbs, aiming, rosters, rooms, economies, and presentation. One 10 Hz integer world that renders itself; three heroines who visit it at 60 fps through the same customs office.
 
-**Where the code stands** *(synced at `cc38a00`)*. Shipped and therefore authoritative: the packet and its ledger (§2 as shipped — eleven rows since the fire lab's FUEL row), the terrain/liquid/solids/reactions quartet — `GridStone`, `GridWater`, `GridSand`, `GridReactions` — (§3 all-liquid movement densest-first with viscosity, the density sort pass, pressure-head seek level, displacement, the absent-material pass gates, both flow exports, soil/stone/ice movement, damp and soak; and since the fire lab: gas movement and exchange, the fire solver with its contact-ignition delay, condensation, and wood terrain), the renderer and palette (§9 lines marked *shipped*; the renderer lives in `scripts/fx/` since the fire lab), and the `TestSandbox` harness with the water, packet, soil, oil, and fire acceptance suites (six water examples, four packet tests, ten soil examples, eight oil examples, ten gas examples, eleven fire examples — 3000 ticks to equilibrium, all through the shared drift-watched runner; the fire lab runs its timing tests short and overrides the conservation policy with the water+steam+damp trio and the 4:1 smoke production rate). Not yet code: the room model, acid/lava chemistry and freeze/thaw, the bridge driers (fire's boil ladder is the only damp sink in code), the bridge (§4), the actor machinery (§5–§8), the light rig, and the level format (§10). Shipped prose names its source; planned prose is design-ahead-of-code and says so.
+**Where the code stands** *(synced at the bridge lab — the working tree past `e38fbe4`; the sync commit's own hash lands here at commit time)*. Shipped and therefore authoritative: the packet and its ledger (§2 as shipped — eleven booked rows since the fire lab's FUEL row, plus `actor_s`, the fifteenth column: the bridge's claim overlay, unbooked and cleared at every tick head), the terrain/liquid/solids/reactions quartet — `GridStone`, `GridWater`, `GridSand`, `GridReactions` — (§3 all-liquid movement densest-first with viscosity, the density sort pass, pressure-head seek level, displacement, the absent-material pass gates, both flow exports, soil/stone/ice movement, damp and soak; since the fire lab: gas movement and exchange, the fire solver with its contact-ignition delay, condensation, and wood terrain; since the bridge lab: the sealed-chamber density swap), the room model (`Room`/`RoomState` — §8's first half: one CA domain per room, the per-room PRNG, snapshot/restore, unobserved rooms never ticked), the bridge's thermal half (`ActorBridge` + `ThermalBody` — §4.1–§4.2 as shipped: claims and displacement, ABSORB/DRIP/BOIL/CROSS-TALK/DRY, fire/lava contact, the per-tick body shuffle, the family checksum), the actor shell's first cut (`CollisionMirror`, `Witch` — §5 partial: the matter-to-physics contact contract and one heroine's locomotion), the renderer and palette (§9 lines marked *shipped*), and the `TestSandbox` harness with the water, packet, soil, oil, fire, bridge, and rooms suites (six water examples, four packet tests, eleven soil examples, eight oil examples, ten gas examples, eleven fire examples, fourteen bridge examples, four room examples — 3000 ticks to equilibrium, all through the shared drift-watched runner; the fire lab runs its timing tests short and overrides the conservation policy with the water+steam+damp trio and the 4:1 smoke production rate; the rooms lab restores its worlds instead). The witch lab (`test_witch.tscn`) is a manual playground, not an example suite — it stays out of `run_all`. Not yet code: acid/lava chemistry and freeze/thaw, MELT, smolder (§4.4), the magic orders, the door protocol, pockets, per-actor ledgers beyond the family sum, the lasso and the contact-event modules (§6–§7), the light rig, and the level format (§10). Shipped prose names its source; planned prose is design-ahead-of-code and says so.
+
+**Changelog v1.6 — the bridge lab: rooms, the customs office, the first actor (the working tree past `e38fbe4`; the sync's own commit fills this hash)**
+
+- **The room model is code** (`Room`, `RoomState`): the engine quintet around one packet — the bridge runs at the tick head, then solids, liquids, reactions — with the per-room PRNG (seeded at construction, advanced only inside ticks) and the snapshot/restore machinery: fourteen census columns, the ignition overlay, both sweep-parity counters, copied as values on both sides (the aliasing canary), asserted green outside the tick. Unobserved rooms are never ticked — frozen by absence, not by a flag. The rooms suite (RT1–RT4): byte-exact restore that survives later ticks, fire's forgiveness (spent fuel, fire bits, and ignition progress all return to baseline), the frozen twin, and same-seed determinism — cheap no longer: the PRNG rolls now
+- **The bridge is code** (`ActorBridge`, the customs office): bodies register and unregister; the tick head clears and rebuilds every body's claim, then runs each body's passes in a per-tick Fisher–Yates shuffle on the room PRNG; the quanta are expected-value rolls (numerator/denominator, the remainder rolled in-tick) — lumpy by doctrine, integer by law. Shipped exchanges: **ABSORB** (pool → wetness, tiered; a full tile drinks to saturation in one tick), **DRIP** (wetness → pool, ~4 water/s scaled by drip_mul, one PRNG-picked overlapped tile per operation), **BOIL** (heat + pool water → steam in the tile, tiered; min(heat, water) at a full tile — the dunk, budget-neutral by construction), **CROSS-TALK** (heat + own wetness → steam, flat 8/s), **DRY** (heat + damp underfoot → steam at 8/s — the bridge drier is no longer planned), FIRE/LAVA contact (+4/+8 per tick, capped at HEAT_MAX). The family checksum brackets the whole pass — pool + damp + every body's wetness; nothing crosses the customs office without landing (BT1–BT14)
+- **The 1:1:1:1 retune is law: water, steam, damp, and wetness are one unit.** The even 2:1 wetness lattice is dead. `ThermalBody` carries heat 0–64 (HEAT_MAX — even maxed, she converts less than she displaces) and wetness 0–64 at 1:1; ABSORB and DRIP trade water and wetness one-for-one; CROSS-TALK and DRY are 1:1:1. Consequence: the carry window halves (~16 s at saturation, DRIP 4/s) — the knobs are DRIP and WETNESS_MAX, never a second lattice. HOT stays 63, SACRED
+- **The claim column ships** (`actor_s`): a body's hitbox volume becomes live capacity — standing holds the water out, moving claims new tiles, leaving releases. Claims are overlay: never booked, never audited (`solid_capacity` is the ledger's legality line; `pool_capacity` reads the claim live), cleared at every tick head and on restore. Overflow pours through the entry tile first, then the vacated column (the wake), then up and out (the splash — rule five's walk, bridge-side). Displacement's proofs: entry splashes once and tenancy pumps nothing (BT11), the standing claim holds seek-level out (BT12), the walking wake keeps the basin and the family (BT13), the sealed pool breaks its own surface (BT10), a dry hot body boils before it drinks (BT14). And fire breathes through an actor: the air gate refunds claimed volume (+64 per nibble) — fire is a hazard to actors, never starved by one
+- **The actor shell's first cut ships:** `ThermalBody` (heat, wetness, drip_mul, overlapped/support tiles, per-tile volumes, the entry tile and the wake — the owner writes at frame speed, the bridge spends at tick speed), `CollisionMirror` (the matter-to-physics half of the contact contract: the packet's solid map as 8×8 colliders, re-diffed every tick, boundary walls on three sides and open sky above — fire burns the floor out from under her), and **the witch herself** (`Witch`): a `CharacterBody2D` on a body, the 8×24 hitbox (a subtile wide, three tall), the 10px jump in code (SACRED), the capacity-aware wade line (half the tile's free capacity in liquid — a soil-bottomed pool reads true), swim (SWIM_GRAV 120, the stroke gated on sinking, the crouch dive), the outlined sheet driving her anim state. She never writes a tile — everything crosses the bridge. The witch lab (`test_witch.tscn`) is her manual playground: spawn/teleport, paint, ignite, live heat/wetness/family readout
+- **The sealed chamber sorts** (`GridSand`): a crossing subtile may swap into a full tile whose terrain holds a pool — the swap replaces budget and escape with a density trade: the destination sheds its liquid into the source (`TilePacket.shift_pool`, booked both sides), and the liquid rises into the space each subtile vacates. Soil tolerates the one-unit clamp gap (its damp drinks the squeeze); stone and ice demand the exact fit. ST6's sealed-column ruling retimed; ST11 seals the proof
+- **The whole bank runs at once:** `run_all` registers the rooms suite behind the others (the witch lab stays out — a playground, not an example suite)
 
 **Changelog v1.5 — the fire lab (`d3946f0`) and the Amazon sibling (`5369ce6`)**
 
@@ -62,8 +72,8 @@
 
 - Extracted from `witchgame.md` v2.1 §1–§4 and its shared systems; the game docs become deltas
 - **The bridge:** every actor carries **heat** and **wetness**; the CA stores no temperature, ever. All exchanges are integer quanta at 10 Hz; steam is the universal heat sink
-- **HOT = 63 (SACRED).** Vents round up: 255 → 128 → 64 → 32 — three throws from blazing, two of them incendiary. Gains retuned: flap +4, dash +8, fire +4/t, lava +8/t
-- **DRIP** is universal: ~4 water/s randomized, 2 wetness per water — every wet actor is a walking, leaking water source (~32 s carry window at saturation)
+- **HOT = 63 (SACRED).** Vents round up: 255 → 128 → 64 → 32 — three throws from blazing, two of them incendiary. Gains retuned: flap +4, dash +8, fire +4/t, lava +8/t *(the shipped engine caps heat at HEAT_MAX 64, world v1.6 — the ladder's top rungs retime at the magical girl's lab)*
+- **DRIP** is universal: ~4 water/s randomized, 1 wetness per water since the 1:1:1:1 retune — every wet actor is a walking, leaking water source (~16 s carry window at saturation)
 - **Smolder is CA-side** with hysteresis: HOT overlap or a game stimulus (the beam's burn band) builds a 4 s warning before ignition. Tags are fuel objects and get the warning too
 - **Actors cross doors; atoms never.** Player-facing doors always mark room boundaries — the crossover/coop contract. Door crossing is the conservation interface
 - **Pits are pockets:** one-way capture fixtures, any orientation, evil aura rendered on every one. Matter in = sanctioned loss; actors in = captured
@@ -97,11 +107,11 @@ The laws. When in doubt, these decide.
 - Coyote time, jump buffering, ledge tolerance ride the actor shell *(planned — E3; no actor code exists)*
 - **Performance discipline:** the CA runs in typed packed arrays (`PackedByteArray` and friends) — that part is shipped. Allocation-free ticks and a native hot loop are targets, not current fact: today the whole engine is GDScript and a tick does allocate (level snapshots, per-run arrays). Actors will ride Godot's C++ physics. Escape hatch: C#/GDExtension if profiling ever demands
 - **Room size is an authoring decision, not a budget.** Small rooms mean tight challenges; big rooms mean lots of atoms. The GBC aesthetic is a style, not a hardware constraint. Profile the ceiling on target hardware once the engine is finished; grow from there. *(Open item.)*
-- **Determinism rig:** one `RandomNumberGenerator` per room, `seed = level_seed ⊕ room_id`. Derive the room's fixed tile permutation at load, then advance per tick. Actor order is a per-tick PRNG shuffle. *(Planned — arrives with the stochastic rates of §4; the shipped engine is PRNG-free, deterministic by pass order and alternating sweep parity.)* Render effects key on (tile hash, tick count), never wall-clock, never the PRNG *(shipped — the streak hashes)*.
+- **Determinism rig:** one `RandomNumberGenerator` per room, `seed = level_seed ⊕ room_id`. Derive the room's fixed tile permutation at load, then advance per tick. Actor order is a per-tick PRNG shuffle. *(Shipped at the bridge lab: `Room` seeds the per-room PRNG at construction and the bridge advances it — body shuffle and quanta rolls, all inside the tick; RT4 is the same-seed proof. The fixed tile permutation and the `level_seed ⊕ room_id` formula remain plan — `Room` takes its seed raw today.)* Render effects key on (tile hash, tick count), never wall-clock, never the PRNG *(shipped — the streak hashes)*.
 
 ## 2. Data model
 
-**Per-tile packet — as shipped** (`TilePacket`): structure-of-arrays — one `PackedByteArray` column per field, one row per tile, the tile index is the row number. Fourteen bytes per tile, plus an eleven-row per-room ledger:
+**Per-tile packet — as shipped** (`TilePacket`): structure-of-arrays — one `PackedByteArray` column per field, one row per tile, the tile index is the row number. Fourteen census bytes per tile plus the claim overlay, and an eleven-row per-room ledger:
 
 ```
 TERRAIN : AIR, STONE, WOOD, SOIL, BRAZIER, SPIKE, DOOR, DOOR_CLOSED
@@ -114,6 +124,9 @@ DAMP    : held by soil — 32 capacity per soil subtile (wood: flat 64), 1:1 wit
 TAGS    : bit flags per tile — WET shipped; poisoned/tainted/holy/fertile are planned rows
 FUEL    : 0–255 burnable energy attached to solids — outside the pool, own ledger row (shipped)
 FIRE_S  : fire bits per tile — overlay state, never packet matter, never booked (shipped)
+ACTOR_S : claimed occupancy nibbles per tile — the bridge's displacement overlay: unbooked,
+	  never audited, rebuilt at every tick head, never stored in the census (shipped at
+	  the bridge lab)
 LEDGER  : eleven rows — six materials, three subtile kinds, damp, fuel; double-entry, asserted every tick
 FLOW    : exported per tile per tick (direction + strength) — derived, not matter — one export
 		  per engine: GridWater for liquid arrivals, GridSand for solid crossings
@@ -123,32 +136,34 @@ FLOW    : exported per tile per tick (direction + strength) — derived, not mat
 
 **The content pool.** Water, oil, acid, lava, smoke, and steam are separate 0–255 fields sharing one budget: their total in a tile never exceeds 255, reduced 64 per solid subtile of any kind — and only AIR and SOIL terrain holds a pool at all; every other terrain value is a full solid, capacity 0. Mixtures are allowed; an over-budget tile ejects through the displacement rule — lightest material first, never destroyed. The density table is shipped (water 30, oil 20, acid 40, lava 50, smoke 10, steam 5 — the rest stack, heaviest at the bottom, gas on top) and drives lightest-first ejection, the seek-level pressure heads, and the shipped sort pass today (SORT_RATE, units per tick toward the rest layer — steam out-climbs acid's sink 8:1 — one trade per pair per tick); the reaction matrix is planned, and the layering render ships for liquids and gases with palette entries (water, oil, smoke, steam — since the fire lab) — acid and lava alias water colors until their labs. DAMP and FUEL belong to solids and live outside the pool; FIRE is overlay state, never matter. Gas thresholds rescale to 0–255 density.
 
-**The actor state block** *(planned — no actors yet)*. Every actor — heroine, enemy, pot, thrown ball — carries:
+**The actor state block** *(first cut shipped as `ThermalBody`)*. Every actor — heroine, enemy, pot, thrown ball — carries:
 
 ```
-heat      : 0–255                 # thermal currency; actor-layer only
-wetness   : 0–254, even only      # the 2:1 lattice; SATURATED ≡ 254
-weight    : byte + class L/M/H    # per-game resolution reads this
-archetype : behavior + projectile profile + landed state
-drip_mul  : drip rate multiplier (0 = holds its water)
-trajectory: ring buffer, ~1 s of position + heading at 60 fps
-holdings  : pot contents, held-enemy refs — ledger-visible
+heat      : 0–64                  # thermal currency; actor-layer only; HEAT_MAX 64 since the retune
+wetness   : 0–64                  # the 1:1 lattice since the retune; SATURATED ≡ 64 — one unit with water
+weight    : byte + class L/M/H    # per-game resolution reads this (planned)
+archetype : behavior + projectile profile + landed state (planned)
+drip_mul  : drip rate multiplier, per-10 (10 = full rate, 0 = holds its water) — shipped
+trajectory: ring buffer, ~1 s of position + heading at 60 fps (planned)
+holdings  : pot contents, held-enemy refs — ledger-visible (planned)
 ```
 
-Heroes are 16×32 and span two tiles; every thermal operation picks one overlapped tile per tick via the PRNG (drip target, absorb source, boil site, steam emission). Underfoot operations (DRY, MELT) target the supporting tiles.
+Heroes are 16×32 (the shipped hitbox is 8×24 — a subtile wide, three tall) and span up to three tiles; every thermal operation picks one overlapped tile per tick via the PRNG (drip target, absorb source, boil site, steam emission) — *shipped, the `_pick_index` law; BT7 is the same-stream proof*. Underfoot operations target the support tile — *DRY shipped; MELT planned*. Per-tile volumes (the hitbox profile in nibbles), the entry tile, and the wake are owner-written at frame speed; the bridge spends them at tick speed.
 
 **The smolder overlay** *(planned)*. A runtime per-fuel-tile timer, not packet data. Room resets clear it; snapshots don't carry it. *(The shipped contact-ignition timer, `GridReactions._ignition`, is this pattern's first code — overlay state, cleared on reset, never booked.)*
 
 **Room record:** baseline / saved bytes / saved enemies / tagged / enemy_baseline, plus held-enemy exclusion marks — captured enemies are out of the baseline; nothing duplicates across a door.
 
-**Conservation ledger.** The shipped core is `TilePacket`'s eleven rows — the six pool materials, the three subtile kinds, **DAMP at 1:1 water-equivalent**, and **FUEL** — asserted every tick alongside the per-tile pool constraint (Σ content ≤ capacity, no two subtile kinds claiming one cell) and the damp constraint (damp ≤ capacity: 32 × soil popcount, 64 flat on wood); a drift is a bug. Planned rows and books extend it: LAVA at 64:1, ICE at 32:1, reactions as balanced integer transfers, plus **boundary-flux** (exteriors, waterfalls, rain), **pocket-loss** (sanctioned destruction — the ledger calls it fine), **fauna flux** (spawn-stream entries and exits, booked like rain), and **actor holdings** — wetness at 2:1 water-equivalent, pot interiors, held enemies — attached and detached as flux, transferred at doors.
+**Conservation ledger.** The shipped core is `TilePacket`'s eleven rows — the six pool materials, the three subtile kinds, **DAMP at 1:1 water-equivalent**, and **FUEL** — asserted every tick alongside the per-tile pool constraint (Σ content ≤ capacity, no two subtile kinds claiming one cell) and the damp constraint (damp ≤ capacity: 32 × soil popcount, 64 flat on wood); a drift is a bug. Planned rows and books extend it: LAVA at 64:1, ICE at 32:1, reactions as balanced integer transfers, plus **boundary-flux** (exteriors, waterfalls, rain), **pocket-loss** (sanctioned destruction — the ledger calls it fine), **fauna flux** (spawn-stream entries and exits, booked like rain), and **actor holdings** — wetness at 1:1 water-equivalent since the retune, pot interiors, held enemies — attached and detached as flux, transferred at doors. *(Shipped at the bridge lab: the family checksum — the whole pool + damp + every body's wetness — brackets every tick as the first rung of this ledger; the finer per-actor books remain design.)*
 
 ## 3. Element simulation
 
-The shipped tick — one room, fixed order. The ruling is **solids, then liquids, then reactions**: sand's repack deficits are resolved by water's displacement pass the same tick, reactions read settled matter, and the reaction tick owns the packet assert (last engine's privilege — the full engine's ledger assert lands at the very end of `element_tick`).
+The shipped tick — one room, fixed order. The ruling is **the bridge, then solids, then liquids, then reactions**: the body's claim is live capacity before matter moves, sand's repack deficits are resolved by water's displacement pass the same tick, reactions read settled matter, and the reaction tick owns the packet assert (last engine's privilege — `Room.tick` runs bridge → sand → water → react, so the full engine's ledger assert lands at the very end).
 
 ```gdscript
-# shipped today — the harness calls exactly this, in this order:
+# shipped today — Room.tick() calls exactly this, in this order:
+bridge.tick()   # ActorBridge: clear the claims -> rebuild every body's claim -> per-body
+				#   passes in a PRNG-shuffled order, family-checksummed (world.md §4)
 sand.tick()     # GridSand: flow reset -> expand the packet nibbles -> subtile pass, bottom-up,
 				#   alternating sweep (tile crossings stamp solid flow and carry damp) ->
 				#   repack (popcount deltas booked)
@@ -189,7 +204,7 @@ func element_tick(room):               # the full engine, once built
 
 **Flow export** *(shipped — one per engine)*. GridWater exports liquid arrivals; GridSand exports solid crossings — one subtile arrival stamps 64 pool-units (SUB_FLOW_MASS), so a landslide and a waterfall read on one scale (two crossings = 128 > DIFFUSER_FLOW: a rockslide is a diffuser — intended, review-flagged). Both follow the same pattern: arrays wiped at the owning engine's tick head, magnitudes sum, dominant direction by largest single arrival, first stamp wins ties. Gameplay *(planned consumers)*: pushes actors and loose objects (capped vs. walk speed). Rendering *(shipped consumers)*: strong downward flow draws waterfall streaks (above **FLOW_STREAK**); the debug overlay draws both engines' arrows. A tile with liquid-in-transit above **DIFFUSER_FLOW** is a *diffuser* — the condition is exported (the constant ships; consumers are game-side — the witch's beam cannot pass one). Consumers also read coarse level bands — DRY / WET / HALF / FULL — off `levels_changed`; fine units stay internal.
 
-**Soil (subtiles)** *(shipped — `GridSand`, ST1–ST10)*. 4-bit occupancy; popcount is matter, Σ popcount asserted every tick by the ledger's SOIL_S row. All sixteen shapes representable — transient shapes during falls and slides are the animation. Stability is what the rules produce, not a stored constraint. Moves as shipped: fall if below empty — one subtile per tick through air, gated single-cell sub-steps so nothing tunnels; through liquid, sink at the material's SUB_SINK rate (soil 1, stone 2, ice −1 = buoyant, rests — rising is the float lab, not yet code); slide diagonally if the diagonal-below is empty and the side is clear (corner rule); repose emerges — settled neighbors differ by ≤ ~1 subtile; piles are 8px staircases. 8px is a hop, never an auto-step. A landing subtile must find the tile enterable: terrain that holds a pool, and either the budget fits (255 − 64 per subtile) or the displaced liquid has escape-reachable headroom up the column (air-gate family). Soil sinks through water and the water closes in above it (ST4); a sealed basin exchanges soil for water exactly, one subtile per 64 (ST5); a sealed column refuses the exchange outright (ST6). *Shipped (Lab E):* moisture is mortar and damp is code — capacity 32 per soil subtile, exchanged 1:1 with water and steam (a full tile: 128; a full water tile over full soil soaks to exactly 127). Soak runs in the reaction pass: a water-bearing tile drinks clamp(w/16, 1, 16) per tick into the first headroom down its column — its own soil, else through saturated soil below (the percolation skip: the search moves, damp doesn't); a deep pool soaks only through its bottom tile; water never soaks across air, water-only tiles, or full-solid terrain. Damp rides crossings — a departing soil subtile carries an even share of its tile's damp (≤ 32). A tile gains the **WET** tag above 50% of damp capacity and loses it below 30%; a wet tile reads the sticky row — **no slide for any kind, fall never gated**. Render: pixel lines from the top of the occupied region, 8 damp per line — the creeping front. *Shipped since the fire lab:* fire's steam siege dries — the boil ladder drains damp at `BOIL_D` 4/2/1, so burning a wet slope can now trigger the landslide (the dried soil slides, burying fire, spikes, enemies). *Planned:* the remaining driers — DRY underfoot (§4.2), FIZZLE — the bridge's; no tool or verb dries damp yet, and the wet tag still never clears without fire.
+**Soil (subtiles)** *(shipped — `GridSand`, ST1–ST11)*. 4-bit occupancy; popcount is matter, Σ popcount asserted every tick by the ledger's SOIL_S row. All sixteen shapes representable — transient shapes during falls and slides are the animation. Stability is what the rules produce, not a stored constraint. Moves as shipped: fall if below empty — one subtile per tick through air, gated single-cell sub-steps so nothing tunnels; through liquid, sink at the material's SUB_SINK rate (soil 1, stone 2, ice −1 = buoyant, rests — rising is the float lab, not yet code); slide diagonally if the diagonal-below is empty and the side is clear (corner rule); repose emerges — settled neighbors differ by ≤ ~1 subtile; piles are 8px staircases. 8px is a hop, never an auto-step. A landing subtile must find the tile enterable: terrain that holds a pool, and either the budget fits (255 − 64 per subtile) or the displaced liquid has escape-reachable headroom up the column (air-gate family). Soil sinks through water and the water closes in above it (ST4); a sealed basin exchanges soil for water exactly, one subtile per 64 (ST5); and since the bridge lab **a sealed column sorts by density too** — the sealed-chamber swap: a crossing subtile may enter a full tile whose terrain holds a pool when the source absorbs the liquid the destination sheds (soil tolerates the one-unit clamp gap — its damp drinks the squeeze; stone and ice demand the exact fit), the liquid rising into the space each subtile vacates, booked both sides (`shift_pool`; ST6 retimed, ST11). *Shipped (Lab E):* moisture is mortar and damp is code — capacity 32 per soil subtile, exchanged 1:1 with water and steam (a full tile: 128; a full water tile over full soil soaks to exactly 127). Soak runs in the reaction pass: a water-bearing tile drinks clamp(w/16, 1, 16) per tick into the first headroom down its column — its own soil, else through saturated soil below (the percolation skip: the search moves, damp doesn't); a deep pool soaks only through its bottom tile; water never soaks across air, water-only tiles, or full-solid terrain. Damp rides crossings — a departing soil subtile carries an even share of its tile's damp (≤ 32). A tile gains the **WET** tag above 50% of damp capacity and loses it below 30%; a wet tile reads the sticky row — **no slide for any kind, fall never gated**. Render: pixel lines from the top of the occupied region, 8 damp per line — the creeping front. *Shipped since the fire lab:* fire's steam siege dries — the boil ladder drains damp at `BOIL_D` 4/2/1, so burning a wet slope can now trigger the landslide (the dried soil slides, burying fire, spikes, enemies). *Shipped since the bridge lab:* DRY underfoot is code (§4.2) — a HOT body dries the damp underfoot, steam-converted, so the wet tag can clear under a heroine's feet and the landslide verb runs both ways. *Planned:* FIZZLE and the smolder-driven driers.
 
 **Stone subtiles** *(shipped loose — `GridSand`; the flag is planned)*. In the current engine every stone subtile runs the sand rules — fall, corner-rule slide, sink at SUB_SINK 2 — and piles by them; there is no LOOSE flag yet. The plan keeps the flag as a refinement: static occupancy unless marked **LOOSE**. Carved by acid (64 acid destroys one subtile), cast by lava (64 lava + water → one subtile + steam) — both reactions planned. Wood is carved at fuel granularity. Doors never carve. Glaze is immune. The ledger conserves STONE subtile count across solid and loose states (the STONE_S row books every popcount delta); shatter moves matter, never deletes it.
 
@@ -237,18 +252,18 @@ Heat arrives at this matrix only through the bridge — never as a stored field.
 
 ### 4.1 Two layers, one customs office
 
-Actors mutate heat and wetness freely at 60 fps (flap costs, throw vents, contact gains). Matter only ever changes at 10 Hz. An actor's heat "waits for the bus": generated at frame speed, relevant at tick speed. All actor→CA effects buffer as work orders and apply at the head of the tick, in tile order, then per-tick PRNG-shuffled actor order. The banned bug class: **any code path where an actor writes tiles directly.**
+Actors mutate heat and wetness freely at 60 fps (flap costs, throw vents, contact gains). Matter only ever changes at 10 Hz. An actor's heat "waits for the bus": generated at frame speed, relevant at tick speed. All actor→CA effects buffer as work orders and apply at the head of the tick, in tile order, then per-tick PRNG-shuffled actor order. The banned bug class: **any code path where an actor writes tiles directly.** *Shipped at the bridge lab:* the work orders are the claim and displacement passes, the shuffle is a Fisher–Yates on the room PRNG, and the ban holds in code — `Witch` owns pixels, `ThermalBody` owns state, `ActorBridge` owns tiles.
 
 ### 4.2 The thermal exchanges
 
-All rates are expected values of stochastic integer events rolled on the room PRNG. Tiers key off the tile's water content.
+All rates are expected values of stochastic integer events rolled on the room PRNG. Tiers key off the tile's water content. *Shipped as `ActorBridge` (BT1–BT14) at the 1:1:1:1 retune — water, steam, damp, and wetness are one unit. MELT stays reserved.*
 
 | Exchange | Direction | Rate | Quantum |
 |---|---|---|---|
-| **ABSORB** | pool water → wetness | tier: <128 → 4/s · ≥128 → 16/s · =255 → instant to saturation | 1 water → 2 wetness |
-| **DRIP** | wetness → pool water | ~4 water/s, randomized | 2 wetness → 1 water, random overlapped tile |
+| **ABSORB** | pool water → wetness | tier: <128 → 4/s · ≥128 → 16/s · =255 → instant to saturation | 1 water → 1 wetness |
+| **DRIP** | wetness → pool water | ~4 water/s, randomized, drip_mul-scaled | 1 wetness → 1 water, PRNG-picked overlapped tile |
 | **BOIL** | heat + pool water → steam | same tiers; instant at 255 = min(heat, water) | 1 : 1 : 1, steam lands in the tile |
-| **CROSS-TALK** | heat + own wetness → steam | 16 wetness/s flat | 2 wetness + 1 heat → 1 steam |
+| **CROSS-TALK** | heat + own wetness → steam | 8 wetness/s flat | 1 wetness + 1 heat → 1 steam |
 | **DRY** | heat + soil damp underfoot → steam | 8 damp/s | 1 damp + 1 heat → 1 steam |
 | **MELT** | heat + ice underfoot → water | 16 water-eq/s (one subtile / 2 s) | 1 heat per water; CA-side, billed |
 | **FIRE/LAVA contact** | CA → actor heat | +4 / +8 per tick | — |
@@ -258,7 +273,7 @@ Laws and consequences:
 
 - **Steam is the only exit for heat.** CROSS-TALK is one rule with two reads: air-drying when the actor is hot, coolant when it's wet. Wetness reduces heat exactly as pool water does.
 - **The dunk is a steam bomb, and it self-caps.** At a full tile, min(heat, water) converts in one tick; steam replaces water *within the pool budget* — one tile's worth, never a flood. A heroine at 255 diving into a full pool arrives at 0 heat inside one steam cloud.
-- **The carry window.** SATURATED (254) drips out over ~32 seconds of walking. Mop here, sweat there, walk fast. A cold magical girl can ferry water as wetness and boil it on delivery; the witch can drop a hot enemy in a puddle and watch it cool, hissing, on its own.
+- **The carry window.** SATURATED (64, since the 1:1:1:1 retune) drips out over ~16 seconds of walking. Mop here, sweat there, walk fast. *The retune halved the window — the knobs are DRIP and WETNESS_MAX, never a second lattice.* A cold magical girl can ferry water as wetness and boil it on delivery; the witch can drop a hot enemy in a puddle and watch it cool, hissing, on its own.
 - **Rain is emergent anti-air.** Rain fills her tile; a hot body boils it as it lands. No authored rule.
 - **Drip and cross-talk run concurrently** (a hot, wet actor mostly steams, partly drips). Suppressing drip when hot is a one-line playtest knob.
 - **No actor→actor heat or wetness transfer in v1.** Contact effects are archetype modules (a Cinderkit's touch); the only actor-to-actor water channel is drip-then-boil — a held wet enemy cools a hot holder by leaking.
@@ -287,17 +302,19 @@ Actors cross doors; atoms never. At a crossing the engine snapshots the actor's 
 
 ### 4.6 Per-actor ledgers
 
-Heat and wetness assert every tick: gains − spends = current. A lost heat point is a bug, same as a lost water unit.
+Heat and wetness assert every tick: gains − spends = current. A lost heat point is a bug, same as a lost water unit. *(Shipped as the family checksum — pool + damp + Σ wetness brackets every tick; the per-actor gain/spend books remain design, and until they land the family sum can hide a swap between two bodies' tiles.)*
 
 ## 5. Actors, physics, contact
 
 **The engine owns what moves and what collides.** Heroes are `CharacterBody2D`; projectiles and thrown enemies are `RigidBody2D` with custom integrators; the lasso tip, pockets, and sensors are `Area2D`. CA surfaces (fire, lava, spikes, liquid tiers) are tile-sampled at the tick, not physics shapes.
 
+**Shipped at the bridge lab — the first cut:** `CollisionMirror` is the matter-to-physics half of the contact contract (the CA is truth, so colliders mirror the packet's solid map at 8×8 subtile resolution, re-diffed every tick — fire burns the floor out from under her; boundary walls on three sides, open sky above); `ThermalBody` is the actor's thermal half (§2); and **the witch walks** — `Witch`, a `CharacterBody2D` on a body, the 8×24 hitbox (a subtile wide, three tall), the 10px jump in code (SACRED), the capacity-aware wade line, swim at SWIM_GRAV 120 with the stroke (gated on sinking) and the crouch dive, the outlined sheet driving her anim state. She never writes a tile — everything crosses the bridge. **Still planned:** typed contact events, response modules, the trajectory ring, stun, `RigidBody2D` projectiles, `Area2D` sensors.
+
 **Contact events** are typed, and carry the geometry (offset, normal, relative velocity) and the state (weight class, archetype, heat, wetness, module payloads). **Modules own the response:** collision-response modules and per-frame trajectory-edit modules attach per actor. The magical girl's bands, pips, spin, and bank behavior are modules on her shots; the witch hangs a gravity module for launch arcs and enemy-specific landed powers on the same hooks. Gameplay events are bespoke and owned by the actor that generated them.
 
 **Universal movement laws:**
 
-- Liquid ≥ 128 in the tile → **half speed** (wading). Submerged → **swim**: SWIM_GRAV 120, vy clamp, stroke = jump, 10px surface hop
+- Liquid ≥ 128 in the tile → **half speed** (wading) *(shipped — the line is capacity-aware: half the tile's free capacity in liquid, so a soil-bottomed pool reads true)*. Submerged → **swim**: SWIM_GRAV 120, vy clamp, stroke = jump, 10px surface hop *(shipped in `Witch`)*
 - FLOW and wind on the actor's tile push it (capped vs. walk speed)
 - Oil is swimmable exactly like water **except** it grants no wetness — and it's fuel
 - Every heroine jumps exactly 10 px (the Amazon's sandal double-jump is her doc's one declared dispensation, game-side). Identical legs is the engine joke
@@ -328,7 +345,7 @@ Previews are twinkling dotted lines (random phase per dot, hash-based). Per-game
 
 ## 8. Rooms, doors, death, lives
 
-**The room model.** One CA domain per room, any size — authoring decides (small rooms are tight challenges; large rooms are many atoms). The magical girl's strip is one room; its reaches are beat annotations, not boundaries. Unobserved rooms freeze.
+**The room model.** One CA domain per room, any size — authoring decides (small rooms are tight challenges; large rooms are many atoms). The magical girl's strip is one room; its reaches are beat annotations, not boundaries. Unobserved rooms freeze. *Shipped as `Room`/`RoomState` (RT1–RT4): the quintet around one packet with the bridge at the tick head, the per-room PRNG (seeded at construction, advanced only inside ticks), snapshot/restore as value copies on both sides — byte-exact, assert-green outside the tick, the stored baseline surviving later ticks (the aliasing canary) — and the blank reset path. Unobserved rooms are frozen by absence: the harness never ticks them. `RoomSpec`, door policy, pockets, death, and lives remain design.*
 
 **Door policy is authored per door** — baseline on cycle, snapshot on cycle, restore on exit — machinery here, policy in the game docs.
 
@@ -388,27 +405,27 @@ Generator notes: run several that disagree — maze output as topology for large
 
 ## 11. Build order — the engine substrate
 
-*Status at `cc38a00`:* E0–E2 are code, fire included; E3–E5 not started. The shipped test harness is `TestSandbox` plus the water, soil, oil, and fire scenes — a 10 Hz timer, F-key diagram presets carved into the 15×15 grid (each scene binds its own set), K runs the acceptance suites headlessly through the shared `_run_example` runner (six water examples, four packet unit tests, ten soil examples, eight oil examples, ten gas examples, eleven fire examples — OT1–OT4, UT1–UT4, GT0–GT9, FT1–FT11 — 3000 ticks to equilibrium, every tick drift-watched per engine; the fire timing tests run short and restore) — the precursor of §10's vignette rig.
+*Status at the bridge lab (the working tree past `e38fbe4`):* E0–E2 are code, fire included; E4's thermal half and E3's first cut are code; the lasso, the light rig, and the level format are not. The shipped test harness is `TestSandbox` plus the water, soil, oil, fire, rooms, and witch scenes — a 10 Hz timer, F-key diagram presets carved into the 15×15 grid (each scene binds its own set), K runs the acceptance suites headlessly through the shared `_run_example` runner (six water examples, four packet unit tests, eleven soil examples, eight oil examples, ten gas examples, eleven fire examples, fourteen bridge examples, four room examples — OT1–OT4, UT1–UT4, GT0–GT9, FT1–FT11, ST1–ST11, BT1–BT14, RT1–RT4 — 3000 ticks to equilibrium, every tick drift-watched per engine; the fire timing tests run short and restore; the rooms lab restores its worlds) — the precursor of §10's vignette rig. `run_all` runs every registered suite in one pass; the witch lab is a playground, not a suite, and stays out.
 
-- **E0 — World:** packet, ledger, the render Image — **shipped** (`TilePacket`, `ElementRenderer`; asserts hold over long runs). The room model is not: one fixed grid, no `RoomSpec`, no freezing
+- **E0 — World:** packet, ledger, the render Image — **shipped** (`TilePacket`, `ElementRenderer`; asserts hold over long runs) — and the room model with it since the bridge lab (`Room`/`RoomState`: one CA domain per room, the per-room PRNG, snapshot/restore, unobserved rooms never ticked; RT1–RT4). `RoomSpec` is still design
 - **E1 — Liquids:** **shipped** — GridWater as the liquid engine (per-material passes, viscosity, the density sort pass, pressure-head seek level) + flow export + displacement (authoritative), acceptance-tested (water + oil suites)
-- **E2 — Matter:** **shipped through the fire lab** — soil/stone/ice subtiles, the reaction engine, soak, wet tags, and mortar are code (`GridSand`, `GridReactions`); oil movement is code (`GridWater` MOVERS + viscosity + sort); **fire is code** — the fire solver, contact ignition, condensation, gas movement and exchange, wood terrain (`GridReactions`, `GridWater`; FT1–FT11, GT0–GT9); acid, lava, and glaze columns exist in the packet without rules; freeze/thaw and the bridge driers are design
-- **E3 — Actors:** the shell, contact contract, trajectory ring, lasso core, stun/capture, thrown profiles, pots as actors — not started
-- **E4 — Bridge:** thermal exchanges, smolder, door protocol, pockets, per-actor ledgers — not started
+- **E2 — Matter:** **shipped through the fire lab, extended at the bridge lab** — soil/stone/ice subtiles, the reaction engine, soak, wet tags, and mortar are code (`GridSand`, `GridReactions`); oil movement is code (`GridWater` MOVERS + viscosity + sort); **fire is code** — the fire solver, contact ignition, condensation, gas movement and exchange, wood terrain (`GridReactions`, `GridWater`; FT1–FT11, GT0–GT9); the sealed-chamber density swap is code since the bridge lab (ST6 retimed, ST11); acid, lava, and glaze columns exist in the packet without rules; freeze/thaw is design — the bridge drier DRY shipped
+- **E3 — Actors:** **first cut shipped at the bridge lab** — the thermal shell (`ThermalBody`), the matter-to-physics contact contract (`CollisionMirror`), one heroine's locomotion (`Witch`: 10px jump, capacity-aware wade, swim), claims and displacement (BT8–BT13). The typed contact events, response modules, trajectory ring, lasso core, stun/capture, thrown profiles, and pots as actors remain design
+- **E4 — Bridge:** **the thermal half is code** — ABSORB/DRIP/BOIL/CROSS-TALK/DRY, fire/lava contact, the claim column and displacement, the per-tick shuffle, the family checksum (BT1–BT14). Smolder (§4.4), MELT, the magic orders (§4.3), the door protocol, pockets, and per-actor ledgers beyond the family sum remain design
 - **E5 — Light:** rig, profiles, palette module — not started
 
-The witch's M0–M2.5 map onto E0–E2 + E5; her later milestones build on E3/E4. The magical girl builds almost entirely on E3/E4 — her combat *is* modules on this substrate. The Amazon is E2's demanding customer too — the LOOSE flag, the shard-actor pattern, and the wind system — and builds her kinetic combat on E3/E4.
+The witch's M0–M2.5 map onto E0–E2 + E5; her later milestones build on E3/E4 — and her M4 substrate (the bridge's thermal half, her legs) is code since the bridge lab; the panic clock and her verbs wait on the rest. The magical girl builds almost entirely on E3/E4 — her combat *is* modules on this substrate. The Amazon is E2's demanding customer too — the LOOSE flag, the shard-actor pattern, and the wind system — and builds her kinetic combat on E3/E4.
 
 ## 12. Engine exit checklist
 
 - Soak test: minutes of random-input simulation, ledger green, zero drift, no float in the CA — assert it *(the ledger and volume asserts run every tick in code today; the harness adds a per-engine drift watch — first offending tick and engine — catching destroy-and-book pairs the double-entry cannot see; the minutes-long soak rig is pending)*
-- Same seed → identical replay (per-tick state hash; PRNG advanced only in the tick)
+- Same seed → identical replay (per-tick state hash; PRNG advanced only in the tick) *(RT4 ships the proof)*
 - The steam bomb self-caps: 255 heat in a full tile → 255 steam in one tile, no overflow, budget-neutral by construction
-- Heat and wetness ledgers assert per actor; a hot body entering water cools by exactly the water it boiled
+- Heat and wetness ledgers assert per actor; a hot body entering water cools by exactly the water it boiled *(the family sum is code; the per-actor books are pending)*
 - No code path where an actor writes a tile (review-ban the class; grep it in CI)
 - Door crossing: holdings transfer exactly; held enemies never duplicate; the exited room freezes mid-flow with no mass teleport
 - Pocket loss books; a captured heroine respawns at her entry door with the room at baseline
-- Tiers read correctly across a two-tile heroine (head in steam, feet in water) — stochastic picks, PRNG'd, never wall-clock
+- Tiers read correctly across a two-tile heroine (head in steam, feet in water) — stochastic picks, PRNG'd, never wall-clock *(shipped — the PRNG-picked tile law)*
 - 60 fps at authored room scale, typed arrays, zero per-tick allocations
 - The picture is the state: the debug view is the render
 
@@ -447,30 +464,36 @@ CONDENSE_RATE = 2 · FIRE_DIST = 4   # steam -> water per tick on cool stone; su
 AIR_MIN = 16                         # pool_free the fire's tile or any orthogonal must hold (LINE) — the all-adjacent doctrine
 WOOD_DAMP_CAP = 64                  # a wood tile holds damp flat — half a full soil tile; render-darkens past half
 
-# ── planned — not yet code (E2 reactions, E3 actors, E4 bridge) ────
-JUMP_HEIGHT = 10                     # SACRED — every heroine, identical legs
-GRAVITY = 480, JUMP_V = 98           # sqrt(2·g·h), h = 10
+# ── shipped at the bridge lab — ActorBridge, ThermalBody, Witch, Room ──
+HOT = 63                             # SACRED — smolder threshold (ThermalBody; smolder itself is still design)
+HEAT_MAX = 64                        # even maxed, she converts less than she displaces
+WETNESS_MAX = 64                     # 1:1 with water — the 2:1 even lattice retired at the retune; SATURATED ≡ 64
+DRIP_SCALE = 10                      # drip_mul is per-10: 10 = full rate, 0 = holds
+TIERS by tile water: <128 → 4/s · ≥128 → 16/s · =255 → instant (to saturation / min(heat, water))
+DRIP = 4 water/s, randomized, drip_mul-scaled   # carry window ≈ 16 s at saturation — the retune halved it
+CROSS_TALK = 8 wetness/s flat (1 wet : 1 heat : 1 steam)
+DRY = 8 damp/s underfoot (1 damp : 1 heat : 1 steam)   # the bridge drier — the re-tuned price shipped
+CONTACT: FIRE +4/t, LAVA +8/t        # overlapped-tile contact heat, capped at HEAT_MAX
+JUMP_HEIGHT = 10, GRAVITY = 480, JUMP_V = 98   # SACRED — in code (Witch); identical legs
+SWIM_GRAV = 120 · stroke = jump      # the wade line is capacity-aware: half the tile's free capacity in liquid
+CLAIM: occupancy nibbles per tile, clamp 4 — overlay, unbooked, cleared every tick head and on restore
+
+# ── planned — not yet code (E2 freeze/thaw and acid/lava · E3 lasso and contact events · E4 smolder/doors/pockets) ──
 SANDAL_JUMP_V = 139                  # the Amazon's one declared dispensation (game-side) — "DOUBLE JUMP" doubles the 10px jump
 ACID_SUB = 64, purge below 64        # acid is not conserved; water is
 LAVA_SUB = 64, ICE_SUB = 32 water (displaces 64)
-# retired: BURN_DRAIN (wood 8 / vine 12 / coal 1) — superseded by BURN_RATE 24 + OIL_PER_FUEL 4, shipped (v1.5)
-# retired: OPEN_AIR_MIN — shipped as AIR_MIN 16, the all-adjacent air gate (v1.5)
-HOT = 63                             # SACRED — smolder threshold, the tells
-WETNESS: 0–254 even, SATURATED = 254
-TIERS by tile water: <128 → 4/s · ≥128 → 16/s · =255 → instant
-DRIP = 4 water/s (2 wetness per water)        # carry window ≈ 32 s
-CROSS_TALK = 16 wetness/s (8 steam/s, −8 heat/s)
-DRY = 8 damp/s underfoot (1 damp : 1 steam : 1 heat)   # re-priced by the 1:1 retune — re-tune at E4
 MELT = 16 water-eq/s underfoot (1 heat per water, 32 per subtile)
-CONTACT: FIRE +4/t, LAVA +8/t
 SMOLDER = 4 s build · 0.5 s hold · 2× decay · wet/bury resets
 STUN = 10 s flat · LASSO_RANGE = 7 · SNATCH = 0.15 s · GENTLE_DROP ≤ 1.5 tiles
-SWIM_GRAV = 120 · WADE = half speed at ≥128 liquid
 LIVES = 3 · 0 → level reset
+# retired: BURN_DRAIN (wood 8 / vine 12 / coal 1) — superseded by BURN_RATE 24 + OIL_PER_FUEL 4, shipped (v1.5)
+# retired: OPEN_AIR_MIN — shipped as AIR_MIN 16, the all-adjacent air gate (v1.5)
 # retired: FLOW_RATE = 3 — never shipped; flow speeds are the rule formulas above
 # retired: SOIL_SUB 64 / DAMP 2:1 — superseded by DAMP_PER_SUB 32 at 1:1 (v1.2)
 # retired: CELL_UNITS 256 / RISE_MIN_DIFF 256 — head math replaced by density-weighted pressure (v1.3)
 # retired: FUEL/FIRE as planned fields — shipped at the fire lab: fuel a booked row, fire unbooked overlay (v1.5)
+# retired: wetness 0–254 even (2:1) · CROSS_TALK 16 · DRIP 2:1 — superseded by the 1:1:1:1 retune at the
+#   bridge lab: water, steam, damp, and wetness one unit; WETNESS_MAX 64, CROSS_TALK 8 (v1.6)
 ```
 
 ## Appendix A — supersessions (what this doc retires)
@@ -478,7 +501,7 @@ LIVES = 3 · 0 → level reset
 | Source | Retired by |
 |---|---|
 | witch v2.1 §1–§4 | absorbed here; `witchgame` v3.0 is a delta doc |
-| witch "damp meter" | actor **wetness** (0–254 even); tile DAMP unchanged |
+| witch "damp meter" | actor **wetness** — 0–254 even at the time, 0–64 at 1:1 since the v1.6 retune; tile DAMP unchanged |
 | witch DRY_RATE 3/s, drip 1-per-2 | universal DRIP + CROSS-TALK |
 | witch SOAK_RATE <tune> | the tier table |
 | witch immune to heat | she has heat (fire/lava contact); she generates none |
@@ -495,19 +518,28 @@ LIVES = 3 · 0 → level reset
 | FUEL/FIRE as planned fields | shipped (v1.5): fuel a booked ledger row; fire unbooked overlay bits |
 | "gases join at the float lab" | joined at the fire lab — smoke/steam in MOVERS with their own rules (v1.5) |
 | BURN_DRAIN / OPEN_AIR_MIN (planned) | superseded by BURN_RATE 24 / OIL_PER_FUEL 4 / AIR_MIN 16, shipped (v1.5) |
+| wetness 0–254 even only — the 2:1 lattice (§2, §4.2, §4.6) | the 1:1:1:1 retune: water, steam, damp, and wetness one unit; WETNESS_MAX 64 — shipped at the bridge lab (v1.6) |
+| CROSS_TALK 16 wetness/s · DRIP 2 wetness : 1 water · ABSORB 1 : 2 | CROSS_TALK 8 flat, all trades 1:1 — the same retune (v1.6) |
+| "the shipped engine is PRNG-free" (§1 determinism) | the per-room PRNG is consumed at the tick head — body shuffle and quanta rolls, RT4 the proof (v1.6) |
+| E3/E4 "not started" (§11) | the actor shell's first cut and the bridge's thermal half are code (v1.6) |
+| "no tool or verb dries damp yet" (§3 soil, App. B) | DRY underfoot is code — the bridge drier shipped (v1.6) |
 
 ## Appendix B — risk register
 
-- **Bridge ordering:** orders at tick head, tile order, PRNG actor shuffle. The matter ledger catches ejection bugs; the per-actor ledgers catch thermal drift. Both assert every tick
+- **Bridge ordering:** orders at the tick head, PRNG body shuffle — shipped: `Room.tick` runs bridge → sand → water → react, the shuffle is Fisher–Yates on the room PRNG, the family checksum is the thermal assert. The finer per-actor gain/spend books remain design; until they land, the family sum can hide a swap between two bodies' tiles
 - **The instant tier:** min(heat, water) in one tick must stay budget-neutral — steam replaces water in the pool by construction; assert it, because this is the steam bomb
-- **Multi-tile actors:** one PRNG'd tile pick per operation; mixed-tile heroine states resolve stochastically — accepted lumpiness, deterministic because seeded
+- **Multi-tile actors:** one PRNG'd tile pick per operation; mixed-tile heroine states resolve stochastically — accepted lumpiness, deterministic because seeded *(shipped — the `_pick_index` law; BT7 is the same-stream proof)*
 - **LOOSE_STONE:** soil rules on stone subtiles — shipped exactly so in `GridSand` (every subtile is loose today; the flag is the planned refinement); Σ popcount extends to STONE; shatter-into-water must eject by flow, never vanish
 - **Pockets as trigger volumes:** nothing may push a heroine in unwarned — the aura is the promise; review any FLOW source aimed at a pocket mouth
 - **Smolder edges:** the 0.5 s hold exists for bouncing contacts; decay must not negative-clip; wet-fizzle on completion must reset cleanly
 - **Room-size ceiling:** open item — profile after E-complete; the 112×15 strip is the current largest authored room; target 4× headroom
 - **Wind system:** still TBD; authored draft fields, gas advection, and rain slant all block on it
-- **Two water-equivalences:** actor wetness is 2:1, tile damp is 1:1 — both booked in one ledger. Code and docs must never borrow one rate for the other; the w0 conservation checks and the drift watch are the tripwires
-- **DRY re-priced:** the 1:1 retune doubled underfoot drying's steam yield and heat cost (8/8, was 4/4) and halved the witch's damp-wall grind (16 fizzles per full tile, was 32) — re-tune at the bridge lab; C2/C5's authored damp amounts may need a pass
-- **The first drier shipped — fire's boil ladder:** fire drains damp to steam (`BOIL_D` 4/2/1 at distance; damp-steam is created matter, vented from its source) — the only damp sink in code. No tool or verb dries damp yet, and the wet tag never clears without fire or a future tool; mudslides are still one-way until the bridge driers
+- **One water-equivalence since the retune:** water, steam, damp, and wetness are a single unit — the family checksum (pool + damp + Σ wetness) is the one tripwire, and the w0 conservation checks and the drift watch stand guard. The old 2:1 wetness warning is retired with its lattice; code and docs must never resurrect it
+- **DRY shipped at the re-tuned price:** the 1:1 retune doubled underfoot drying's steam yield and heat cost (8/8, was 4/4) and halved the witch's damp-wall grind (16 fizzles per full tile, was 32) — the bridge lab landed it as code; C2/C5's authored damp amounts may still need a pass
+- **Two driers in code now:** fire's boil ladder (`BOIL_D` 4/2/1 at distance; damp-steam is created matter, vented from its source) and the bridge's DRY (heat + damp underfoot → steam, 8/s). The wet tag can clear under a heroine's feet — the landslide verb runs both ways; playtest it
 - **Smoke is a production rate, not an invariant:** un-vented smoke is un-made — no debt, no buffer. The fire-lab policy (smoke never shrinks, never grows past 4 × burned) is the test tripwire; if smoke ever becomes bookkeeping-strict, the solver's capacity story changes
 - **The two ignition timers:** the shipped contact delay (`IGNITE_WOOD` 5 ticks, the material's timer, front at 2 tiles/s) and the planned heat-stimulus smolder (4 s, the tile's) coexist in design — §4.4. Never let prose or code merge them; the pace belongs to the first, the warning to the second
+- **The claim overlay is unaudited by design:** `solid_capacity` is the ledger's legality line and the claim never books — its safety hangs on two clears (every tick head, every restore). If a claim ever survives either, `pool_capacity` lies while the assert stays green; the BT displacement proofs (BT10–BT12) are the tripwire
+- **Fire breathing through actors:** the air gate refunds claimed volume (+64 per nibble) — fire is a hazard, never starved by a body. No example yet burns a tile under a standing body; author one when smoke meets boots
+- **The halved carry window:** the 1:1:1:1 retune halved wetness capacity (64) and the carry window (~16 s at DRIP 4/s). The mop-ferry verbs drain faster; the knobs are DRIP and WETNESS_MAX, never a second lattice — retime the fire-walk endurance numbers in the game docs at their next pass
+- **The sealed swap's clamp gap:** soil tolerates a one-unit squeeze (its damp drinks it); stone and ice demand the exact fit — ST6's retimed check and ST11 pin it, but any future material with different damp math must re-answer the question. And ST6's printed label still says "refuses the exchange" while its body asserts the sort — a stale string in `test_soil.gd`, the human's rename

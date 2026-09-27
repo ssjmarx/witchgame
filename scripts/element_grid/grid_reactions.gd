@@ -130,15 +130,17 @@ func _fire_pass() -> void:
 func _burnable(i: int) -> bool:
 	return pk.get_fuel(i) > 0 or pk.get_pool(i, OIL) > 0
 
-## The air check: the tile itself or any orthogonal holds pool_free >= AIR_MIN, smoke and steam counted -- fuel breathes through its neighbors (the all-adjacent doctrine).
+## The air check: the tile or any orthogonal holds pool_free >= AIR_MIN (smoke and steam counted), the actor claim refunded -- fire is a hazard to actors, never starved by one.
 func _air_ok(i: int, x: int, y: int) -> bool:
-	if pk.pool_free(i) >= AIR_MIN:
+	if pk.pool_free(i) + 64 * pk.actor_s[i] >= AIR_MIN:
 		return true
 	for k in N4X.size():
 		var nx := x + N4X[k]
 		var ny := y + N4Y[k]
-		if stone.in_bounds(nx, ny) and pk.pool_free(stone.idx(nx, ny)) >= AIR_MIN:
-			return true
+		if stone.in_bounds(nx, ny):
+			var ni := stone.idx(nx, ny)
+			if pk.pool_free(ni) + 64 * pk.actor_s[ni] >= AIR_MIN:
+				return true
 	return false
 
 ## One fire bit walks the boil ladder: W0, D0, W1, D1, W2, D2 -- the first passing check only, capped by what is there, one source per bit. Standing water boils at twice the damp rate at every distance, in place where it stands; damp-steam is created matter and vents from its source tile. The distance rings ignore occlusion by ruling: stone-slowed distant boil is the readable distinction.

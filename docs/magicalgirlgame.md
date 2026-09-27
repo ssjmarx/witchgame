@@ -1,12 +1,17 @@
-# MAGICAL GIRL DEMO — Vertical Slice GDD v2.0
+# MAGICAL GIRL DEMO — Vertical Slice GDD v2.1
 
-*Delta doc on `world.md` v1.5 — shared engine, shared enemy IP, different verbs. Sibling of `witchgame.md` v3.0 and `amazongame.md` v1.0. Engine deltas: **none.** The strip, the bridge, LOOSE_STONE, the pockets — all engine now. This doc owns verbs, aiming, roster, rooms, and prizes.*
+*Delta doc on `world.md` v1.6 — shared engine, shared enemy IP, different verbs. Sibling of `witchgame.md` v3.1 and `amazongame.md` v1.0. Engine deltas: **none.** The strip, the bridge, LOOSE_STONE, the pockets — all engine now. This doc owns verbs, aiming, roster, rooms, and prizes.*
 
 **Goal:** one continuous-scroll strip of seven reaches plus three single-screen shrines where every verb — grab, throw, swoosh, band, pip, pocket, vent, boil — is operational with placeholder art. If this slice is fun with gray boxes, the game exists.
 
 **Pitch:** a Game Boy Color–styled action platformer where the enemies are the ammo, the level is the billiard table, and a deterministic cellular automata keeps honest score of everything she breaks. Non-lethal: nobody dies, everybody naps.
 
 **Inheritance map:** tech (world §1) · data model (world §2) · element sim (world §3) · the bridge, heat and wetness, smolder (world §4) · rendering and light (world §9) · actor API and weight (world §6) · lasso core (world §7) · rooms, doors, death, lives, pockets (world §8) · level format (world §10).
+
+**Changelog v2.1 — the bridge lab sync (world v1.6)**
+
+- **The substrate is engine code now:** the bridge's thermal half (`ActorBridge` — the exchanges, claims, displacement, BT1–BT14), the collision mirror, the first heroine shell, and the room model (`Room`/`RoomState`, RT1–RT4). Her thermal numbers below are the shipped ones
+- **The 1:1:1:1 retune is law:** water, steam, damp, and wetness one unit — her wetness is 0–64, cross-talk steams at 8/s, and the carry is ~16 s. The retired numbers (cross-talk 16/s, carry ~32 s) are superseded wherever they appear below; retime R3's cistern pacing and the Cinderkit table's splash sizes at her next pass
 
 **Changelog v2.0**
 
@@ -43,7 +48,7 @@
 
 ## 1. Tech setup
 
-Inherited from world §1 in full: Godot 4.5, 240×240 / 720×720, integer scaling, 16×16 tiles with 8×8 subtiles, 15×15 visible, 10 Hz integer deterministic tick. Per-room PRNG and the modern conveniences ride the actor shell — planned, not yet code (world v1.1 sync).
+Inherited from world §1 in full: Godot 4.5, 240×240 / 720×720, integer scaling, 16×16 tiles with 8×8 subtiles, 15×15 visible, 10 Hz integer deterministic tick. The per-room PRNG is code since the bridge lab (world v1.6); the modern conveniences still ride the actor shell — planned.
 
 **Map:** one `LevelSpec` — the strip, **one RoomSpec, 112×15**, continuous scroll (camera free, clamped to strip bounds). No boundaries on the critical path; reaches are beat annotations, not walls. Three single-screen shrine RoomSpecs (15×15) attach via doors off-path; unobserved rooms freeze (inherited). The strip is always live — it's one room, and that's cheap.
 
@@ -131,9 +136,9 @@ HEARTS  = 3 (cap 5), 1s i-frames per hit
 
 **The ladder: 255 → 128 → 64 → 32.** Three throws from blazing to neutral; the first two balls HOT (127, 64 — smolder on impact, 4 s, then fire), the third cool (32 — a safe shot). Combat is thermal regulation, the regulation is fun, and it doesn't need managing. Gains are movement and contact — the wave's choreography writes the schedule; the streams feed her ammunition, and each catch-and-throw is a half-vent. Three of them is the level's ending.
 
-**Cooling is not authored — it is the bridge.** Film 4/s, deep 16/s, a full tile instant (`min(heat, water)`), rain boiling as it lands in her tile, wetness steaming off at 16/s. All her cooling is water contact, and **the dunk is a steam bomb** — self-capped by the pool budget: one tile of steam, never a flood. Cistern ceilings are tall for a reason.
+**Cooling is not authored — it is the bridge.** Film 4/s, deep 16/s, a full tile instant (`min(heat, water)`), rain boiling as it lands in her tile, wetness steaming off at 8/s (the 1:1 retune, world v1.6). All her cooling is water contact, and **the dunk is a steam bomb** — self-capped by the pool budget: one tile of steam, never a flood. Cistern ceilings are tall for a reason.
 
-**Her wetness — the inherited verb, worn lightly.** She mops at the pool (by tier), carries ~32 s of drip, and drips where she stands; heat boils it off as steam where she wants steam. Nobody asks her to use it in the slice — R3 lets her discover she can — and it crossover-proofs her: the same loop the witch uses to water gardens, ours uses to leave a line of droplets across a cistern floor, like ruled paper.
+**Her wetness — the inherited verb, worn lightly.** She mops at the pool (by tier), carries ~16 s of drip (the 1:1 body, 0–64 — world v1.6), and drips where she stands; heat boils it off as steam where she wants steam. Nobody asks her to use it in the slice — R3 lets her discover she can — and it crossover-proofs her: the same loop the witch uses to water gardens, ours uses to leave a line of droplets across a cistern floor, like ruled paper.
 
 **Death and lives.** Hearts to zero, or a pocket: **death.** The strip resets to baseline; she respawns at the entry door — the level's start; one life spent; a non-event. **Prizes persist** (they're hers), and the pocketed come home with the baseline — which means dying to farm is a wash at best: a death costs a life, the best chain pays one or two, and the ledger of lives closes at zero. **Shrine deaths are cheap:** the shrine resets, she's back at its door in the strip, one life spent, nothing else lost. **Zero lives → the level reset:** every room to baseline, prizes and tissues forfeit, hearts and lives restored, back to the very beginning. (If death proves too harsh in playtest, checkpoints are the standing reconciler — authored doorframes at reach seams. Not built this slice.)
 
@@ -198,7 +203,7 @@ Silhouette IP is shared with the sibling — same creatures, per-game verbs, and
 
 | Enemy | Wt | Thermal | Alive | As projectile | Landed state |
 |---|---|---|---|---|---|
-| **Drip** | 1 | saturated; slow seep (drip_mul ¼) | marches in chains — a faint wet dotted line behind them | straight; SPLASH is its remaining wetness, 2:1 | a puddle sized by what it carried — or a scalded husk if it cooked in flight |
+| **Drip** | 1 | saturated; slow seep (drip_mul ¼) | marches in chains — a faint wet dotted line behind them | straight; SPLASH is its remaining wetness, 1:1 since the retune | a puddle sized by what it carried — or a scalded husk if it cooked in flight |
 | **Puffseed** | 1 | dry | bobs in floaty clumps | floaty arc, extra hang | POP: a smoke puff that covers a spike for a beat |
 | **Snapcricket** | 1 | dry | sprints through crowds, agitating | fast, flat | CHIRP: wakes sleepers on a timer — the anti-stall |
 | **Willow Whisk** | 0 | dry | erratic hover | doubled spin curvature | WILT: settles light as a leaf |
@@ -270,7 +275,7 @@ HEAT: flap +4 · dash +8 · fire +4/t · lava +8/t (contact)
 THROW vents ⌊H/2⌋: 255 → 128 → 64 → 32   # three throws, two incendiary
 TUG: + ball's remaining heat
 COOLING: bridge tiers — film 4/s · deep 16/s · full tile instant (min(heat, water))
-WETNESS: cross-talk 16/s · drip 4/s · carry ≈ 32 s
+WETNESS: cross-talk 8/s · drip 4/s · carry ≈ 16 s · body 0–64 at 1:1 (world v1.6)
 SPIN: LIGHT 1:4 (sweep ≥45°) · HARD 1:2 (sweep ≥90°)
 LASSO_RANGE = 7 (shared) · SNATCH = 0.15 s · WINDUP = 0.2 s · STUN = 10 s flat
 GENTLE_DROP ≤ 1.5 tiles (shared)

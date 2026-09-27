@@ -78,6 +78,7 @@ var damp := PackedByteArray()
 var tags := PackedByteArray()
 var fuel := PackedByteArray()    # burnable energy attached to solids -- outside the pool, own ledger row
 var fire_s := PackedByteArray()  # fire subtile bits -- overlay state: unbooked, displaces nothing
+var actor_s := PackedByteArray()
 
 var _booked := PackedInt64Array()   # ledger: booked totals, one per row
 var _present := PackedInt32Array()   # per material: count of tiles holding nonzero units -- the absent-pass gate
@@ -105,6 +106,7 @@ func _init(p_w: int, p_h: int) -> void:
 	tags.resize(n)
 	fuel.resize(n)
 	fire_s.resize(n)
+	actor_s.resize(n)
 	clear()
 
 ## Zero every column and the ledger.
@@ -125,6 +127,7 @@ func clear() -> void:
 	tags.fill(0)
 	fuel.fill(0)
 	fire_s.fill(0)
+	actor_s.fill(0)
 	_fire_present = 0
 
 # -- Indexing ----------------------------------------------------------------
@@ -182,12 +185,27 @@ func set_sub(i: int, kind: int, n: int) -> int:
 
 # -- Capacity ----------------------------------------------------------------
 
-## Full-solid terrain = 0, otherwise 255 minus 64 per solid subtile (stone + soil + ice).
-func pool_capacity(i: int) -> int:
+## Capacity against matter only: terrain and subtiles -- the ledger's legality line; the claim is overlay and never audited.
+func solid_capacity(i: int) -> int:
 	if FULL_SOLID[terrain[i]]:
 		return 0
-	var n = POPCOUNT[stone_s[i]] + POPCOUNT[soil_s[i]] + POPCOUNT[ice_s[i]]
-	return maxi(0, POOL_MAX - SUB_DISPLACE * n)
+	return maxi(0, POOL_MAX - SUB_DISPLACE * (POPCOUNT[stone_s[i]] + POPCOUNT[soil_s[i]] + POPCOUNT[ice_s[i]]))
+
+## Full-solid terrain = 0, otherwise the solid capacity minus the actor claim -- the bridge's ejection target (world.md §4).
+func pool_capacity(i: int) -> int:
+	return maxi(0, solid_capacity(i) - SUB_DISPLACE * actor_s[i])
+
+## Actor-claimed occupancy nibbles at tile i -- the bridge is the single writer, rebuilding the column every tick head.
+func get_actor_claim(i: int) -> int:
+	return actor_s[i]
+
+## Add to the tile's actor claim, clamped to a full tile's worth; capacity reads it live.
+func add_actor_claim(i: int, n: int) -> void:
+	actor_s[i] = clampi(actor_s[i] + n, 0, 4)
+
+## Zero the actor claims -- the tick head rebuilds them, and restore must not carry stale ones (the census never stores them: derived state, the flow-array pattern).
+func clear_actor_claims() -> void:
+	actor_s.fill(0)
 
 # -- The content pool --------------------------------------------------------
 
@@ -333,9 +351,9 @@ func assert_all() -> bool:
 			var q := xy_of(i)
 			push_error("subtile overlap at %d,%d" % [q.x, q.y])
 			ok = false
-		if pool_total(i) > pool_capacity(i):
+		if pool_total(i) > solid_capacity(i):
 			var p := xy_of(i)
-			push_error("pool overflow at %d,%d: %d > %d" % [p.x, p.y, pool_total(i), pool_capacity(i)])
+			push_error("pool overflow at %d,%d: %d > %d" % [p.x, p.y, pool_total(i), solid_capacity(i)])
 			ok = false
 		if damp[i] > damp_capacity(i):
 			var q2 := xy_of(i)
@@ -407,6 +425,14 @@ func take_damp(i: int, amount: int) -> int:
 		damp[i] -= taken
 		_book(Led.DAMP, -taken)
 	return taken
+
+## Transfer pool units between tiles, booked on both sides, no capacity clamp -- the mid-pass swap path: the caller guarantees headroom by live subtile counts, the packet's stale column catches up at repack, and the end-of-tick assert polices the invariant.
+func shift_pool(from_i: int, to_i: int, m: int, amount: int) -> int:
+	var moved := take_pool(from_i, m, amount)
+	if moved > 0:
+		_add_units(to_i, m, moved)
+		_book(m, moved)
+	return moved
 
 ## Transfer damp between tiles, no capacity clamp, no booking (net-zero by construction) -- the subtile carry path. The caller guarantees headroom by live subtile counts (GridSand's carry proof); the end-of-tick assert polices the invariant.
 func shift_damp(src: int, dst: int, amount: int) -> void:

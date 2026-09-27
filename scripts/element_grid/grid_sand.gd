@@ -155,7 +155,7 @@ func _sub_pass(sx: int, sy: int) -> void:
 		if not _try_move(sx, cy, sx + flip, cy + 1, kind):
 			_try_move(sx, cy, sx - flip, cy + 1, kind)
 
-## Move a subtile: target cell empty, tile enterable, diagonals also need the side cell clear and the slide policy; a tile crossing exports flow and hands off the mover's share of damp.
+## Move a subtile: the target cell must be empty; a crossing pays the entry gate (or the sealed-chamber swap), a same-tile move pays nothing -- the mover is already in the tile's budget; diagonals need the side clear and the slide policy; a crossing exports flow and hands off the mover's damp share.
 func _try_move(sx: int, sy: int, tx: int, ty: int, kind: int) -> bool:
 	var w2 := width * 2
 	if tx < 0 or tx >= w2 or ty < 0 or ty >= height * 2:
@@ -163,8 +163,12 @@ func _try_move(sx: int, sy: int, tx: int, ty: int, kind: int) -> bool:
 	var tc := ty * w2 + tx
 	if _sub[tc] != EMPTY:
 		return false
-	if not _enterable(tx >> 1, ty >> 1):
-		return false
+	var crossing := (tx >> 1) != (sx >> 1) or (ty >> 1) != (sy >> 1)
+	if crossing and not _enterable(tx >> 1, ty >> 1):
+		if tx != sx or not _swap_ok(sx, sy, tx, ty, kind):
+			return false
+		_swap_move(sx, sy, tx, ty, kind)
+		return true
 	if tx != sx:
 		if not _side_clear(tx, sy):
 			return false
@@ -172,7 +176,7 @@ func _try_move(sx: int, sy: int, tx: int, ty: int, kind: int) -> bool:
 			return false
 	_sub[sy * w2 + sx] = EMPTY
 	_sub[tc] = kind + 1
-	if (tx >> 1) != (sx >> 1) or (ty >> 1) != (sy >> 1):
+	if crossing:
 		_cross_tile(sx, sy, tx, ty, kind)
 	return true
 
@@ -264,3 +268,35 @@ func _soil_in_tile(x: int, y: int) -> int:
 	if _sub[base + w2] == TilePacket.K_SOIL + 1: n += 1
 	if _sub[base + w2 + 1] == TilePacket.K_SOIL + 1: n += 1
 	return n
+
+## The sealed-chamber swap gate: the destination terrain must hold a pool (the entry gate's first clause -- the swap replaces budget and escape, never terrain), then the source must absorb the liquid the target sheds. Soil tolerates the one-unit clamp gap (its damp drinks the squeeze); stone and ice demand the exact fit.
+func _swap_ok(sx: int, sy: int, tx: int, ty: int, kind: int) -> bool:
+	var src := idx(sx >> 1, sy >> 1)
+	var dst := idx(tx >> 1, ty >> 1)
+	if TilePacket.FULL_SOLID[pk.get_terrain(dst)]:
+		return false
+	var shed := pk.pool_total(dst) - maxi(0, TilePacket.POOL_MAX - TilePacket.SUB_DISPLACE * (_cells_in_tile(tx >> 1, ty >> 1) + 1))
+	var room := maxi(0, TilePacket.POOL_MAX - TilePacket.SUB_DISPLACE * (_cells_in_tile(sx >> 1, sy >> 1) - 1)) - pk.pool_total(src)
+	if shed <= room:
+		return true
+	return kind == TilePacket.K_SOIL and shed == room + 1
+
+## Perform the vertical swap: the subtile crosses (grid move, flow stamp, damp handoff), then the target sheds its excess up into the source -- take-then-add, booked, no escape needed: the vacated space is the liquid's home.
+func _swap_move(sx: int, sy: int, tx: int, ty: int, kind: int) -> void:
+	var w2 := width * 2
+	_sub[sy * w2 + sx] = EMPTY
+	_sub[ty * w2 + tx] = kind + 1
+	_cross_tile(sx, sy, tx, ty, kind)
+	var src := idx(sx >> 1, sy >> 1)
+	var dst := idx(tx >> 1, ty >> 1)
+	# capacity from the live grid -- the landing is grid truth until repack; the packet's nibbles are a pass behind (the stale read broke the first cut)
+	var cap_dst := maxi(0, TilePacket.POOL_MAX - TilePacket.SUB_DISPLACE * _cells_in_tile(tx >> 1, ty >> 1))
+	var cap_src := maxi(0, TilePacket.POOL_MAX - TilePacket.SUB_DISPLACE * _cells_in_tile(sx >> 1, sy >> 1))
+	var shed := pk.pool_total(dst) - cap_dst
+	if shed <= 0:
+		return
+	var m := pk.lightest_mat(dst)
+	if m < 0:
+		return
+	var take := mini(shed, maxi(0, cap_src - pk.pool_total(src)))
+	pk.shift_pool(dst, src, m, take)

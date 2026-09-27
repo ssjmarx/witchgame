@@ -1,0 +1,6 @@
+[gd_scene format=3 uid="uid://cb76ft11s8sjg"]
+
+[ext_resource type="Script" uid="uid://doies03qakc5n" path="res://scripts/actors/witch.gd" id="1_nlmc2"]
+
+[node name="Witch" type="CharacterBody2D" unique_id=285754298]
+script = ExtResource("1_nlmc2")

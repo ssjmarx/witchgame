@@ -1,6 +1,6 @@
 # AMAZON DEMO — Vertical Slice GDD v1.0
 
-*Delta doc on `world.md` v1.5 — shared engine, shared enemy IP, different verbs. Sibling of `witchgame.md` v3.0 and `magicalgirlgame.md` v2.0. Where this doc and `world.md` disagree about engine behavior, `world.md` wins.*
+*Delta doc on `world.md` v1.6 — shared engine, shared enemy IP, different verbs. Sibling of `witchgame.md` v3.1 and `magicalgirlgame.md` v2.1. Where this doc and `world.md` disagree about engine behavior, `world.md` wins.*
 
 **Engine deltas we are the demanding customer of:** the **LOOSE flag** (world §3, planned — her sword is its first real client), the **wind system** (world's open item — authored gusts ship in this slice regardless of the draft field), and the **shard-actor pattern** (matter leaving the packet as actor holdings and returning on settle — the pot-interior precedent generalized; a new customer of two planned rows, no new law). **One heroine-value dispensation, declared openly:** `SANDAL_JUMP_V`.
 
@@ -11,6 +11,8 @@
 **Inheritance map:** tech (world §1) · data model (world §2) · element sim (world §3) · the bridge, heat and wetness, smolder (world §4) · rendering and light (world §9) · actor API and weight (world §6) · lasso core (world §7) · rooms, doors, death, lives, pockets (world §8) · level format (world §10).
 
 **Changelog v1.0** — consolidation of brainstorm v0.1–v0.4
+
+*(Addendum, world v1.6 — the bridge lab)* The engine shipped the room model, the bridge's thermal half, and the first heroine shell; the 1:1:1:1 retune (water, steam, damp, wetness one unit) now prices every wetness number in the family. Our declared deltas — the LOOSE flag, the wind system, the shard-actor pattern — remain planned and untouched.
 
 - **Rooms reset on exit. Completely.** The witch's snapshot doors are dead here; the island runs the family default — baseline on every cycle. Lasting change lives in game-side flags, never matter. **The rooms forget; the satchel never does**
 - **No levels, no XP, no economy.** Tin is found (damage), laurels are found (health, four leaves per heart; past cap, one life each), jars and gadgets are found. Sustain is renewable (drops, respawning fauna); progress is not. No shop will ever be built
@@ -45,7 +47,7 @@
 
 ## 1. Tech setup
 
-Inherited from world §1 in full: Godot 4.5, 240×240 / 720×720, integer scaling, 16×16 tiles with 8×8 subtiles, 10 Hz integer deterministic tick, per-room PRNG on the actor shell.
+Inherited from world §1 in full: Godot 4.5, 240×240 / 720×720, integer scaling, 16×16 tiles with 8×8 subtiles, 10 Hz integer deterministic tick, per-room PRNG (code since the bridge lab — world v1.6).
 
 **Map:** one `LevelSpec`, **eight `RoomSpec`s** — the beach (open-sky, wide) and seven dungeon rooms across three descending levels. Rooms are modest (15×15 to ~30×15, authoring's call); doors connect; some drops are one-way (you came down here; getting back is the map's memory). Unobserved rooms freeze (inherited). **Door policy: baseline on cycle — every door, always.** The strip of the girl's demo and the chambers of the witch's are both linear; ours is a loop, and the loop is cheap because rooms forgive.
 

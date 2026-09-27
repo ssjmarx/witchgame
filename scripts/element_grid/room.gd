@@ -1,6 +1,6 @@
-## One CA domain (world.md §8): the engine quartet around one packet, the
-## tick ruling, the per-room PRNG, and the snapshot/restore machinery.
-## Unobserved rooms are simply never ticked -- freezing is absence of tick.
+## One CA domain (world.md §8): the engine quintet around one packet -- the
+## bridge runs at the tick head -- plus the ruling, the per-room PRNG, and
+## the snapshot/restore machinery. Unobserved rooms are never ticked.
 
 class_name Room
 extends RefCounted
@@ -11,20 +11,23 @@ var stone: GridStone
 var water: GridWater
 var sand: GridSand
 var react: GridReactions
+var bridge: ActorBridge
 var rng := RandomNumberGenerator.new()
 
-## Construct the full quartet around one packet (absent materials make idle engines nearly free) and seed the room PRNG -- advanced only inside ticks, never from the frame.
+## Construct the quintet (idle engines are nearly free) and seed the room PRNG -- advanced only inside ticks, never from the frame.
 func _init(p_w: int, p_h: int, p_seed: int) -> void:
 	width = p_w
 	height = p_h
+	rng.seed = p_seed
 	stone = GridStone.new(p_w, p_h)
 	water = GridWater.new(p_w, p_h, stone)
 	sand = GridSand.new(p_w, p_h, stone, water)
 	react = GridReactions.new(p_w, p_h, stone)
-	rng.seed = p_seed
+	bridge = ActorBridge.new(p_w, p_h, stone, rng)
 
-## One simulation tick in the engine ruling: bridge slot reserved at the head (E4), solids, liquids, reactions last -- the ordering law's single owner.
+## One simulation tick in the engine ruling: the bridge at the head (actor exchanges, world.md §4), solids, liquids, reactions last.
 func tick() -> void:
+	bridge.tick()
 	sand.tick()
 	water.tick()
 	react.tick()
@@ -46,6 +49,7 @@ func restore(s: RoomState) -> void:
 	for i in TilePacket.COL_COUNT:
 		# duplicate on the way in as well: assignment aliases, and the stored state must survive
 		pk.load_column(i, s.cols[i].duplicate())
+	pk.clear_actor_claims()
 	pk.rebuild_books()
 	pk.rebuild_present()
 	react.restore_ignition(s.ignition)
