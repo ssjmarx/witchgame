@@ -263,10 +263,14 @@ func run_soil_tests() -> void:
 		var o: Vector2i = s[2]
 		if pk.get_sub(pk.idx(o.x, o.y + 2), TilePacket.K_SOIL) != 15:
 			return "soil did not sink through the sealed column"
-		if pk.get_pool(pk.idx(o.x, o.y + 1), TilePacket.Mat.WATER) < 250:
-			return "water did not rise into the vacated column"
+		var w := pk.get_pool(pk.idx(o.x, o.y + 1), TilePacket.Mat.WATER)
+		var d := pk.get_damp(pk.idx(o.x, o.y + 2))
+		if w == 0:
+			return "the vacated column holds no water"
+		if w + d != 255:
+			return "family leaked: water %d + damp %d != 255" % [w, d]
 		return ""
-		
+
 	var setup_wet := func(s: Array) -> void:
 		var pk: TilePacket = s[0].packet
 		var o: Vector2i = s[2]
@@ -318,7 +322,7 @@ func run_soil_tests() -> void:
 	_test("ST3  half-tiles compact and fall as 3s", KEY_F3, check_compact)
 	_test("ST4  soil sinks, saturates, leaves 127", KEY_F4, check_sink)
 	_test("ST5  sealed basin soaks to 764 water", KEY_F5, check_basin)
-	_test("ST6  sealed column refuses the exchange", KEY_F7, check_sealed)
+	_test("ST6  sealed column sorts by density", KEY_F7, check_sealed)
 	_test("ST7  percolation skip fills deep soil", KEY_F9, check_skip)
 	_run_example("ST8  wet mortar holds the column", PRESETS[KEY_F10], check_mortar, setup_wet)
 	_run_example("ST9  wet tag gains above half capacity", PRESETS[KEY_F11], check_tag_on, damp_at.call(65))
