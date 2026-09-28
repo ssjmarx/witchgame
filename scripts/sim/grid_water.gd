@@ -32,18 +32,10 @@ var stone: GridStone
 var pk: TilePacket            # alias of stone.packet — the data lives there
 var tick_count := 0           # ticks so far; parity flips the sweep direction
 
-# private: per-tick bookkeeping, rebuilt by _analyze().
-# These are OPINION caches, not matter: derived each tick, one tick stale.
-var _region_of: PackedInt32Array
-var _regions: Array = []       # per pocket: [{ body_top: { body id -> row } }]
-var _escape: PackedByteArray   # per cell: the air here can reach open sky
-
-# the sibling modules: the per-tick flow export and the gas rules, over this room's packet
+# the sibling modules: the flow export, the gas rules, and the label pass, over this room's packet
 var flow: WaterFlow
 var gas: WaterGas
-
-var _body_of: PackedInt32Array # per cell: connected-water body id, -1 = none
-var _next_body_id := 0
+var labels: WaterAnalyze
 var _level_snap := PackedByteArray()   # reused per tick -- the snapshot allocates nothing
 
 ## Size the field, bind the packet via the stone facade; everything starts dry.
@@ -53,19 +45,9 @@ func _init(w: int, h: int, terrain: GridStone) -> void:
 	stone = terrain
 	pk = terrain.packet
 	
-	_body_of = PackedInt32Array()
-	_body_of.resize(w * h)
-	_body_of.fill(-1)
-	
-	_region_of = PackedInt32Array()
-	_region_of.resize(w * h)
-	_region_of.fill(-1)
-	
-	_escape = PackedByteArray()
-	_escape.resize(w * h)
-	
 	flow = WaterFlow.new(w, h)
 	gas = WaterGas.new(w, h, terrain, flow)
+	labels = WaterAnalyze.new(w, h, terrain)
 	
 	_level_snap.resize(w * h)
 
@@ -117,13 +99,13 @@ func is_air_passable(x: int, y: int) -> bool:
 func get_region_of(x: int, y: int) -> int:
 	if not in_bounds(x, y):
 		return -1
-	return _region_of[y * width + x]
+	return labels.region_at(y * width + x)
 
 ## Debug/renderer helper: true if this cell's air cannot reach open sky.
 func is_air_sealed(x: int, y: int) -> bool:
 	if not in_bounds(x, y):
 		return false
-	return not _escape[idx(x, y)]
+	return not labels.escape_at(idx(x, y))
 
 ## Register matter arriving at tile i (mag units, dir code); magnitudes sum, direction follows the largest single arrival (first stamp wins ties — sweep order is fixed, so deterministic); sim moves stamp inline, room sources like rain stamp at tick head.
 func flow_stamp(i: int, dir: int, mag: int) -> void:
@@ -150,11 +132,7 @@ func clear() -> void:
 	tick_count = 0   # reloads reproduce: the sweep phase resets with the world
 	for m in TilePacket.MAT_COUNT:
 		pk.clear_mat(m)
-	_body_of.fill(-1)
-	_next_body_id = 0
-	_region_of.fill(-1)
-	_regions.clear()
-	_escape.fill(false)
+	labels.reset()
 
 ## One simulation tick: relabel, eject displacement, run every mover's rules densest-first (liquids fall and seek level, gases rise), stratify densities, verify volume, verify the ledger, emit band changes.
 func tick() -> void:
@@ -163,7 +141,7 @@ func tick() -> void:
 	flow.reset()
 	var snap := _levels_snapshot()
 	var checksum := _checksum_all()
-	_analyze()
+	labels.analyze()
 	_displacement_pass()
 	for m in MOVERS:
 		if not pk.has_mat(m):
@@ -214,125 +192,6 @@ func _emit_level_changes(before: PackedByteArray) -> void:
 			changed.append(_xy_of(i))
 	if not changed.is_empty():
 		levels_changed.emit(changed)
-
-## Rebuild this tick's labels: merged liquid bodies (any material — one pressure network), air pockets, escape flags.
-func _analyze() -> void:
-	_body_of.fill(-1)
-	_next_body_id = 0
-	_region_of.fill(-1)
-	_regions.clear()
-	for i in width * height:
-		if pk.pool_total(i) >= LINE and _body_of[i] == -1:
-			_flood_body(i)
-	for i in width * height:
-		if _is_air_idx(i) and _region_of[i] == -1:
-			_flood_region(i)
-	_compute_escape()
-
-## Flood-fill one connected liquid body (any material — pressure transmits through mixtures), stamping its id as we go.
-func _flood_body(start: int) -> void:
-	var id := _next_body_id
-	_next_body_id += 1
-	var stack := PackedInt32Array()
-	stack.push_back(start)
-	_body_of[start] = id
-	while not stack.is_empty():
-		var i: int = stack[stack.size() - 1]
-		stack.resize(stack.size() - 1)
-		var x := i % width
-		if x > 0 and pk.pool_total(i - 1) >= LINE and _body_of[i - 1] == -1:
-			_body_of[i - 1] = id
-			stack.push_back(i - 1)
-		if x < width - 1 and pk.pool_total(i + 1) >= LINE and _body_of[i + 1] == -1:
-			_body_of[i + 1] = id
-			stack.push_back(i + 1)
-		if i >= width and pk.pool_total(i - width) >= LINE and _body_of[i - width] == -1:
-			_body_of[i - width] = id
-			stack.push_back(i - width)
-		if i + width < width * height and pk.pool_total(i + width) >= LINE and _body_of[i + width] == -1:
-			_body_of[i + width] = id
-			stack.push_back(i + width)
-
-## Label one air pocket; record its highest contact per body (a rotation's upper junction).
-func _flood_region(start: int) -> void:
-	var id := _regions.size()
-	var cells := PackedInt32Array()
-	var stack := PackedInt32Array()
-	stack.push_back(start)
-	_region_of[start] = id
-	while not stack.is_empty():
-		var i: int = stack[stack.size() - 1]
-		stack.resize(stack.size() - 1)
-		cells.push_back(i)
-		var x := i % width
-		if x > 0 and _is_air_idx(i - 1) and _region_of[i - 1] == -1:
-			_region_of[i - 1] = id
-			stack.push_back(i - 1)
-		if x < width - 1 and _is_air_idx(i + 1) and _region_of[i + 1] == -1:
-			_region_of[i + 1] = id
-			stack.push_back(i + 1)
-		if i >= width and _is_air_idx(i - width) and _region_of[i - width] == -1:
-			_region_of[i - width] = id
-			stack.push_back(i - width)
-		if i + width < width * height and _is_air_idx(i + width) and _region_of[i + width] == -1:
-			_region_of[i + width] = id
-			stack.push_back(i + width)
-	var body_top := {}   # body id -> row of its highest cell touching us
-	for i in cells:
-		var x := i % width
-		if x > 0:
-			_note_contact(i - 1, body_top)
-		if x < width - 1:
-			_note_contact(i + 1, body_top)
-		if i >= width:
-			_note_contact(i - width, body_top)
-		if i + width < width * height:
-			_note_contact(i + width, body_top)
-	_regions.append({ "body_top": body_top })
-
-## Record a pocket cell's orthogonal neighbor as a body contact, keeping the highest row per body.
-func _note_contact(n: int, body_top: Dictionary) -> void:
-	if pk.pool_total(n) < LINE:
-		return
-	var b := _body_of[n]
-	if b < 0:
-		return
-	@warning_ignore("integer_division")
-	var row := n / width
-	if not body_top.has(b) or row < int(body_top[b]):
-		body_top[b] = row
-
-## Mark every cell whose air can reach open sky; a monotone fixpoint, so order never matters.
-func _compute_escape() -> void:
-	_escape.fill(false)
-	var changed := true
-	while changed:
-		changed = false
-		for y in height:
-			for x in width:
-				var i := idx(x, y)
-				if _escape[i] or stone.is_solid(x, y):
-					continue
-				var ok := y == 0  # open sky above the map
-				if not ok and _escape[i - width]:
-					ok = true  # rise through air, or bubble up through liquid
-				if not ok and y > 0 and stone.is_solid(x, y - 1):
-					if (x > 0 and _escape[i - 1]) or (x < width - 1 and _escape[i + 1]):
-						ok = true  # pinned under a ceiling: slide sideways
-				if not ok and pk.pool_total(i) <= AIR_PASSABLE_MAX \
-						and ((x > 0 and _escape[i - 1] and pk.pool_total(i - 1) <= AIR_PASSABLE_MAX)
-						or (x < width - 1 and _escape[i + 1] and pk.pool_total(i + 1) <= AIR_PASSABLE_MAX)
-						or (y > 0 and _escape[i - width] and pk.pool_total(i - width) <= AIR_PASSABLE_MAX)
-						or (y < height - 1 and _escape[i + width] and pk.pool_total(i + width) <= AIR_PASSABLE_MAX)):
-					ok = true  # air flows through air
-				if ok:
-					_escape[i] = true
-					changed = true
-
-## Flat-index form of is_air_passable.
-func _is_air_idx(i: int) -> bool:
-	var p := _xy_of(i)
-	return not stone.is_solid(p.x, p.y) and pk.pool_total(i) <= AIR_PASSABLE_MAX
 
 ## Tile coordinates of flat index i.
 func _xy_of(i: int) -> Vector2i:
@@ -417,13 +276,13 @@ func _cell_pass(i: int, m: int) -> void:
 
 ## May material m from src enter dry cell t? Only if the displaced air has somewhere to go.
 func _gate(t: int, src: int, m: int) -> bool:
-	var region := _region_of[t]
+	var region := labels.region_at(t)
 	if region < 0:
 		return true
 	if pk.get_pool(src, m) < LINE:
 		return true  # sub-visible film: same pocket, internal shuffle
 	# (a) the displaced air can reach open sky
-	if _escape[t]:
+	if labels.escape_at(t):
 		return true
 	# (c) the donor's own headspace is this pocket: it recedes as material moves
 	var sp := _xy_of(src)
@@ -431,12 +290,12 @@ func _gate(t: int, src: int, m: int) -> bool:
 	if top > 0:
 		var above := idx(sp.x, top - 1)
 		if not stone.is_solid(sp.x, top - 1) and pk.pool_total(above) <= AIR_PASSABLE_MAX \
-				and _region_of[above] == region:
+				and labels.region_at(above) == region:
 			return true
 	# (d) rotation: pocket and body also touch higher up — air out high, liquid in low
-	var b := _body_of[src]
+	var b := labels.body_at(src)
 	if b >= 0:
-		var bt: Dictionary = _regions[region].body_top
+		var bt: Dictionary = labels.body_top(region)
 		if bt.has(b) and int(bt[b]) < sp.y:
 			return true
 	return false
@@ -574,23 +433,23 @@ func _transfer_level(s: int, t: int, y: int, diff: int, ptops: PackedInt32Array,
 
 ## Can the air above the receiver's surface give way to this transfer? s and s_top name the donor's own receding headspace.
 func _pocket_vented_for(cell: int, s: int, s_top: int) -> bool:
-	if _escape[cell]:
+	if labels.escape_at(cell):
 		return true
 	if s_top > 0:
 		var s_above := idx(s, s_top - 1)
 		if not stone.is_solid(s, s_top - 1) and pk.pool_total(s_above) <= AIR_PASSABLE_MAX \
-				and _region_of[s_above] == _region_of[cell]:
+				and labels.region_at(s_above) == labels.region_at(cell):
 			return true  # the donor's own receding headspace
 	return false
 
-## Escape-gated column walk: does some tile above (x, y) have pool headroom with air that reaches open sky? The entry gate for deficit landings; _escape is the one-tick-stale opinion (_gate's family).
+## Escape-gated column walk: does some tile above (x, y) have pool headroom with air that reaches open sky? The entry gate for deficit landings; the escape map is the one-tick-stale opinion (_gate's family).
 func headroom_above(x: int, y: int) -> bool:
 	var yy := y - 1
 	while yy >= 0:
 		var i := idx(x, yy)
 		if TilePacket.FULL_SOLID[pk.get_terrain(i)]:
 			return false
-		if pk.pool_free(i) > 0 and _escape[i]:
+		if pk.pool_free(i) > 0 and labels.escape_at(i):
 			return true
 		yy -= 1
 	return false
@@ -684,7 +543,7 @@ func _eject_lightest_up(i: int, amount: int) -> int:
 		if TilePacket.FULL_SOLID[pk.get_terrain(h)]:
 			break
 		var moved := 0
-		if _escape[h]:
+		if labels.escape_at(h):
 			while remaining > 0 and pk.pool_free(h) > 0:
 				var m := pk.lightest_mat(i)
 				if m < 0:

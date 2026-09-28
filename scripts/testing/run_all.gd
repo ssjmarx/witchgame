@@ -17,6 +17,8 @@ const SUITES: Array[String] = [
 func _init() -> void:
 	var t0 := Time.get_ticks_msec()
 	var failed: Array[String] = []
+	if _compile_gate():
+		failed.append("compile gate")
 	for path in SUITES:
 		var script: GDScript = load(path)
 		var lab: TestSandbox = script.new() as TestSandbox
@@ -29,9 +31,22 @@ func _init() -> void:
 		print("== %s: %d pass, %d fail" % [path.get_file(), lab.suite_pass, lab.suite_fail])
 		if not ok:
 			failed.append(path)
+		elif lab.suite_pass + lab.suite_fail == 0:
+			print("VACUOUS SUITE: %s -- zero examples executed" % path.get_file())
+			failed.append(path)
 		lab.free()
 	var secs := (Time.get_ticks_msec() - t0) / 1000.0
 	for path in failed:
 		print("FAILED SUITE: %s" % path)
 	print("== REGRESSION: %d suites, %d failed (%.1f s)" % [SUITES.size(), failed.size(), secs])
 	quit(1 if not failed.is_empty() else 0)
+
+## Hard gate: every global class in the project must parse and instantiate before any suite runs -- a broken script (stale class cache, missing dependency) fails the regression here, loudly, instead of surfacing as vacuous passes downstream.
+func _compile_gate() -> bool:
+	var broken := false
+	for gc in ProjectSettings.get_global_class_list():
+		var s: GDScript = load(gc.path)
+		if s == null or not s.can_instantiate():
+			print("BROKEN GLOBAL CLASS: %s (%s)" % [gc.get("class"), gc.path])
+			broken = true
+	return broken
