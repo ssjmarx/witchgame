@@ -70,35 +70,24 @@ func _handle_key(k: int) -> bool:
 			return true
 	return false
 
-## Held strokes need a held button: RMB erases terrain, water, fuel, and fire; LMB paints -- solids refuse occupied ground.
+## Held strokes need a held button: RMB erases; LMB paints -- solids refuse occupied ground (the shared verbs, aimed at the observed room).
 func _paint_stroke(t: Vector2i) -> bool:
 	if t.x < 0:
 		return false
 	# hover is not a verb -- a stroke needs a held button, and the override owns that gate
 	if not (Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT) or Input.is_mouse_button_pressed(MOUSE_BUTTON_RIGHT)):
 		return false
-	var r := rooms[observed]
-	var pk := r.stone.packet
-	var i := r.stone.idx(t.x, t.y)
 	if Input.is_mouse_button_pressed(MOUSE_BUTTON_RIGHT):
-		pk.set_fire(i, 0)
-		pk.set_fuel(i, 0)
-		r.water.set_water(t.x, t.y, 0)
-		r.stone.set_terrain(t.x, t.y, GridStone.Terrain.AIR)
+		_erase_tile(t)
 		return true
 	match paint:
 		Paint.STONE:
-			if pk.get_terrain(i) == TilePacket.T.AIR and pk.pool_total(i) == 0:
-				r.stone.set_terrain(t.x, t.y, GridStone.Terrain.STONE)
-				return true
+			return _lay_solid(t, GridStone.Terrain.STONE)
 		Paint.WATER:
-			r.water.set_water(t.x, t.y, 255)
+			water.set_water(t.x, t.y, 255)
 			return true
 		Paint.WOOD:
-			if pk.get_terrain(i) == TilePacket.T.AIR and pk.pool_total(i) == 0:
-				r.stone.set_terrain(t.x, t.y, GridStone.Terrain.WOOD)
-				pk.set_fuel(i, 255)
-				return true
+			return _lay_solid(t, GridStone.Terrain.WOOD)
 	return false
 
 ## Re-point the harness aliases at the observed room, hide the other sprite, redraw once -- a TAB while paused must show the frozen truth.
@@ -169,31 +158,18 @@ func _info_line(t: Vector2i) -> String:
 			info += "   fuel %3d   fire %d   ign %d" % [pk.get_fuel(i), pk.get_fire(i), r.react.get_ignition(t.x, t.y)]
 	return info
 
-## The rooms lab's whole suite behind one door: K and run_all both call this.
-func run_suite() -> bool:
-	suite_pass = 0
-	suite_fail = 0
+## The rooms lab's example set: the room-machinery examples in order.
+func run_tests() -> void:
 	run_room_tests()
-	return suite_fail == 0
 
 ## Room-machinery acceptance examples: fresh Rooms built and driven directly -- these test the container (restore, freeze, determinism), not matter equilibria, so they bypass _run_example.
 func run_room_tests() -> void:
 	print("== room self-tests ==")
-	_rt("RT1  restore is byte-exact mid-drift", _rt_restore_exact)
-	_rt("RT2  fire forgiveness: spent fuel returns", _rt_fire_forgive)
-	_rt("RT3  the unobserved room is frozen", _rt_freeze)
-	_rt("RT4  same seed, same bytes", _rt_same_seed)
+	_example("RT1  restore is byte-exact mid-drift", _rt_restore_exact)
+	_example("RT2  fire forgiveness: spent fuel returns", _rt_fire_forgive)
+	_example("RT3  the unobserved room is frozen", _rt_freeze)
+	_example("RT4  same seed, same bytes", _rt_same_seed)
 	print("== done ==")
-
-## PASS/FAIL runner for the RT examples (water's _ptest pattern: a Callable returning "" on success, the reason as the failure).
-func _rt(name: String, fn: Callable) -> void:
-	var err: String = fn.call()
-	if err == "":
-		suite_pass += 1
-		print("PASS  %s" % name)
-	else:
-		suite_fail += 1
-		print("FAIL  %s -- %s" % [name, err])
 
 ## RT1: soak water into soil for 300 ticks, restore, and prove three things -- the ledger lands green outside a tick, the census returns byte-exact, and the baseline survives later ticks (the aliasing canary: a restore that pointed at stored arrays instead of copies would drift with the world).
 func _rt_restore_exact() -> String:

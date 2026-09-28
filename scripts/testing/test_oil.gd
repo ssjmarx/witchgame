@@ -345,9 +345,6 @@ func run_oil_tests() -> void:
 	_run_example("UT4  oil overtops, water never follows", PRESETS[KEY_F10], check_overtop, Callable())
 	print("== done ==")
 
-## The lab's whole suite behind one door: K and run_all both call this.
-func run_suite() -> bool:
-	suite_pass = 0
-	suite_fail = 0
+## The lab's example set: the oil examples in order.
+func run_tests() -> void:
 	run_oil_tests()
-	return suite_fail == 0

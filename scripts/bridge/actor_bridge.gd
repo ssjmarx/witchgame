@@ -166,7 +166,8 @@ func _dry(b: ThermalBody) -> void:
 	var src := stone.idx(s.x, s.y)
 	if pk.get_damp(src) <= 0:
 		return
-	var t := _pick_tile(b)
+	var k := _pick_index(b)
+	var t := b.tiles[k]
 	var i := stone.idx(t.x, t.y)
 	var quanta := _quanta(DRY_RATE)
 	for _q in quanta:
@@ -231,10 +232,6 @@ func _drip(b: ThermalBody) -> void:
 		if pk.add_pool(i, W, 1) == 1:
 			b.wetness -= 1
 
-## One overlapped tile, PRNG-picked -- the two-tile heroine law (world.md §2): each thermal operation samples one overlapped tile per tick.
-func _pick_tile(b: ThermalBody) -> Vector2i:
-	return b.tiles[rng.randi_range(0, b.tiles.size() - 1)]
-
 ## The tier rate by the tile's water: deep pools drink and boil four times a film (world.md §4.2).
 func _tier(water: int) -> int:
 	return TIER_FAST if water >= 128 else TIER_SLOW
@@ -278,6 +275,6 @@ func _eject_up(src: int, x: int, y: int, left: int) -> int:
 			left = _pour_into(src, h, left)
 	return left
 
-## One overlapped tile index, PRNG-picked -- the two-tile heroine law (world.md §2): each thermal operation samples one overlapped tile per tick.
+## One overlapped tile index, PRNG-picked -- the two-tile heroine law (world.md §2): the single draw site every thermal operation shares, one sample per tick.
 func _pick_index(b: ThermalBody) -> int:
 	return rng.randi_range(0, b.tiles.size() - 1)

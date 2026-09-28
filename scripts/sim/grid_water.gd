@@ -33,8 +33,6 @@ var height: int
 var stone: GridStone
 var pk: TilePacket            # alias of stone.packet — the data lives there
 var tick_count := 0           # ticks so far; parity flips the sweep direction
-var trace_seek := false  # TEMP: the U-bend hunt — logs every seek-level run and transfer; delete when closed
-var assert_early := false   # TEMP debug: run the packet assert at water's tick end too (engine attribution during hunts); the load-bearing assert is reactions'
 
 # private: per-tick bookkeeping, rebuilt by _analyze().
 # These are OPINION caches, not matter: derived each tick, one tick stale.
@@ -195,8 +193,6 @@ func tick() -> void:
 		_sort_pass()   # a trade needs two materials; a single-material field has no pair
 	if _checksum_all() != checksum:
 		push_error("GridWater: volume leaked — %d units" % (checksum - _checksum_all()))
-	if assert_early:
-		pk.assert_all()
 	_emit_level_changes(snap)
 
 ## True when at least two materials hold units anywhere -- the sort pass needs a pair to trade.
@@ -508,11 +504,6 @@ func _seek_level_run(x0: int, x1: int, y: int, m: int) -> void:
 				break   # donors only get shorter from here
 			if _transfer_level(s, t, y, diff, ptops, m) > 0:
 				return
-	if trace_seek:
-		var parts := PackedStringArray()
-		for x in cols:
-			parts.append("%d=%d" % [x, heads[x]])
-		print("T%d RUN y=%d m=%d: %s" % [tick_count, y, m, " ".join(parts)])
 
 ## Move volume of material m from column s to receiver t so their pressures converge; returns units moved. Capped by half the pressure difference (no overshoot) and viscosity; the deposit lands at m's surface, the pool floor when m sinks, or the pool surface when m floats -- a full entry makes room by displacement: lighter residents yield in place, a pure-m entry thickens at the interface above, and air above an m-surface is the threshold-gated rise.
 @warning_ignore("integer_division")
@@ -526,13 +517,11 @@ func _transfer_level(s: int, t: int, y: int, diff: int, ptops: PackedInt32Array,
 		var side_air := (s > 0 and not stone.is_solid(s - 1, s_top) and pk.pool_total(surf - 1) <= AIR_PASSABLE_MAX) \
 				or (s < width - 1 and not stone.is_solid(s + 1, s_top) and pk.pool_total(surf + 1) <= AIR_PASSABLE_MAX)
 		if not side_air:
-			if trace_seek: print("T%d XFER %d->%d y=%d: donor stone-capped, no side air" % [tick_count, s, t, y])
 			return 0
 	var avail := 0
 	for yy in range(s_top, y + 1):
 		avail += pk.get_pool(idx(s, yy), m)
 	if avail <= 0:
-		if trace_seek: print("T%d XFER %d->%d y=%d: no avail" % [tick_count, s, t, y])
 		return 0
 	# the receiver's entry: m's own surface when the column carries m; else the pool floor (m sinks) or the pool surface (m floats)
 	var pt: int = ptops[t]
@@ -577,7 +566,6 @@ func _transfer_level(s: int, t: int, y: int, diff: int, ptops: PackedInt32Array,
 				return 0   # no column above to yield
 			var iface := entry - width
 			if pk.pool_total(iface) < LINE:
-				if trace_seek: print("  -> blocked: air/stone above a full entry (rise needs diff >= %d)" % (TilePacket.POOL_MAX * rho))
 				return 0
 			var if_room := pk.pool_free(iface)
 			room = if_room + _eject_lightest_up(iface, want - if_room)
@@ -597,7 +585,6 @@ func _transfer_level(s: int, t: int, y: int, diff: int, ptops: PackedInt32Array,
 		flow_stamp(target, FlowDir.UP, move)
 	else:
 		flow_stamp(target, FlowDir.RIGHT if s < t else FlowDir.LEFT, move)
-	if trace_seek: print("  -> moved %d to %s" % [move, _xy_of(target)])
 	return move
 
 ## Can the air above the receiver's surface give way to this transfer? s and s_top name the donor's own receding headspace.

@@ -55,7 +55,6 @@ const PRESETS := {
 
 ## Load the U-tube demo on boot.
 func _setup() -> void:
-	# water.trace_seek = true
 	_load_preset(KEY_F1)
 
 ## Tick-boundary dosing: held-mouse water in PAINT_DOSE units.
@@ -259,24 +258,13 @@ func run_packet_tests() -> void:
 			return "ledger drifted"
 		return ""
 		
-	_ptest("PT1  drain_lightest grader", check_drain)
-	_ptest("PT2  set_sub reports displacement deficit", check_displace)
-	_ptest("PT3  clear_mat books the removal", check_clearmat)
-	_ptest("PT4  > 255 capacity rejected", check_clamp)
+	_example("PT1  drain_lightest grader", check_drain)
+	_example("PT2  set_sub reports displacement deficit", check_displace)
+	_example("PT3  clear_mat books the removal", check_clearmat)
+	_example("PT4  > 255 capacity rejected", check_clamp)
 	print("── done ──")
 
-## PASS/FAIL runner for the packet tests (mirror of _test, no carving).
-@warning_ignore("shadowed_variable_base_class")
-func _ptest(name: String, fn: Callable) -> void:
-	var err: String = fn.call()
-	if err == "":
-		suite_pass += 1
-		print("PASS  %s" % name)
-	else:
-		suite_fail += 1
-		print("FAIL  %s — %s" % [name, err])
-
-## Carve one example fresh, run it to equilibrium, report PASS/FAIL/leak.
+## Carve one example fresh, run it to equilibrium, report PASS/FAIL/leak through the shared verdict path.
 @warning_ignore("shadowed_variable_base_class")
 func _test(name: String, preset_key: int, check: Callable) -> void:
 	var t_stone := GridStone.new(GRID_W, GRID_H)
@@ -286,20 +274,11 @@ func _test(name: String, preset_key: int, check: Callable) -> void:
 	for t in TEST_TICKS:
 		t_water.tick()
 	var err: String = check.call([t_stone, t_water, o])
-	if err != "":
-		suite_fail += 1
-		print("FAIL  %s — %s" % [name, err])
-	elif t_water.total() != t0:
-		suite_fail += 1
-		print("FAIL  %s — leaked %d units" % [name, t0 - t_water.total()])
-	else:
-		suite_pass += 1
-		print("PASS  %s" % name)
+	if err == "" and t_water.total() != t0:
+		err = "leaked %d units" % (t0 - t_water.total())
+	_record(name, err)
 
-## The lab's whole suite behind one door: K and run_all both call this.
-func run_suite() -> bool:
-	suite_pass = 0
-	suite_fail = 0
+## The lab's example set: the water equilibria, then the packet unit tests.
+func run_tests() -> void:
 	run_self_tests()
 	run_packet_tests()
-	return suite_fail == 0

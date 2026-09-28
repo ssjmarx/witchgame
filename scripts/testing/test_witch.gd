@@ -77,25 +77,20 @@ func _paint_stroke(t: Vector2i) -> bool:
 	var pk := room.stone.packet
 	var i := room.stone.idx(t.x, t.y)
 	if Input.is_mouse_button_pressed(MOUSE_BUTTON_RIGHT):
-		pk.set_fire(i, 0)
-		pk.set_fuel(i, 0)
-		room.water.set_water(t.x, t.y, 0)
-		room.stone.set_terrain(t.x, t.y, GridStone.Terrain.AIR)
+		_erase_tile(t)
 		mirror.sync()
 		return true
 	match paint:
 		Paint.STONE:
-			if pk.get_terrain(i) == TilePacket.T.AIR and pk.pool_total(i) == 0:
-				room.stone.set_terrain(t.x, t.y, GridStone.Terrain.STONE)
+			if _lay_solid(t, GridStone.Terrain.STONE):
 				mirror.sync()
 				return true
 		Paint.WATER:
-			room.water.set_water(t.x, t.y, 255)
+			water.set_water(t.x, t.y, 255)
 			return true
 		Paint.WOOD:
-			if pk.get_terrain(i) == TilePacket.T.AIR and pk.pool_total(i) == 0:
-				room.stone.set_terrain(t.x, t.y, GridStone.Terrain.WOOD)
-				pk.set_fuel(i, 255)
+			if _lay_solid(t, GridStone.Terrain.WOOD):
+				mirror.sync()
 				return true
 		Paint.SOIL:
 			var n := pk.get_sub(i, TilePacket.K_SOIL)

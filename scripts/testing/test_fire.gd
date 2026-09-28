@@ -104,7 +104,7 @@ func _dose() -> void:
 		Paint.SMOKE:
 			water.add_liquid(t.x, t.y, TilePacket.Mat.SMOKE, PAINT_DOSE)
 		Paint.WOOD:
-			_place_wood(t)
+			_lay_solid(t, GridStone.Terrain.WOOD)
 		Paint.SOIL:
 			_brush_soil(t)
 		Paint.DAMP:
@@ -121,41 +121,17 @@ func _clear_world() -> void:
 	stone.packet.clear_fuel()
 	stone.packet.clear_fire()
 
-## Held strokes: RMB erases everything the fire lab can author; LMB lays stone over cleared cells.
+## Held strokes: RMB erases everything the fire lab can author (the shared verb); LMB force-lays stone (this lab's god hand).
 func _paint_stroke(t: Vector2i) -> bool:
-	var i := stone.idx(t.x, t.y)
 	if Input.is_mouse_button_pressed(MOUSE_BUTTON_RIGHT):
-		stone.packet.set_sub(i, TilePacket.K_SOIL, 0)
-		water.set_water(t.x, t.y, 0)
-		stone.packet.set_pool(i, TilePacket.Mat.OIL, 0)
-		stone.packet.set_pool(i, TilePacket.Mat.STEAM, 0)
-		stone.packet.set_pool(i, TilePacket.Mat.SMOKE, 0)
-		stone.packet.set_fuel(i, 0)
-		stone.packet.set_fire(i, 0)
-		stone.set_terrain(t.x, t.y, GridStone.Terrain.AIR)
+		_erase_tile(t)
 		return true
 	if Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT) and paint == Paint.STONE:
+		var i := stone.idx(t.x, t.y)
 		stone.packet.set_sub(i, TilePacket.K_SOIL, 0)
 		water.set_water(t.x, t.y, 0)
 		return stone.set_terrain(t.x, t.y, GridStone.Terrain.STONE)
 	return false
-
-## Lay a wood tile with a full fuel tank (god hand -- no flow stamp, no fire; refuses occupied ground).
-func _place_wood(t: Vector2i) -> void:
-	var i := stone.idx(t.x, t.y)
-	if stone.packet.get_terrain(i) != TilePacket.T.AIR or stone.packet.pool_total(i) > 0:
-		return
-	stone.set_terrain(t.x, t.y, GridStone.Terrain.WOOD)
-	stone.packet.set_fuel(i, 255)
-
-## Paint one soil subtile into the lowest empty slot of tile t (brush is a god hand -- no flow stamp).
-func _brush_soil(t: Vector2i) -> void:
-	var i := stone.idx(t.x, t.y)
-	var n: int = stone.packet.get_sub(i, TilePacket.K_SOIL)
-	for bit in [GridSand.BL, GridSand.BR, GridSand.TL, GridSand.TR]:
-		if (n & bit) == 0:
-			stone.packet.set_sub(i, TilePacket.K_SOIL, n | bit)
-			return
 
 ## God ignite at the hover tile: fuel catches if its gates pass; bare air sparks; wet fuel hisses.
 func _god_ignite() -> void:
@@ -588,14 +564,11 @@ func run_fire_tests() -> void:
 	drift_watch = true   # the fire family creates matter in-tick; the watch ends after them
 	print("== done ==")
 	
-## The fire lab's whole suite behind one door: gas, fire, and bridge examples; K and run_all both call this.
-func run_suite() -> bool:
-	suite_pass = 0
-	suite_fail = 0
+## The lab's example set: gas, fire, then bridge, in order.
+func run_tests() -> void:
 	run_gas_tests()
 	run_fire_tests()
 	run_bridge_tests()
-	return suite_fail == 0
 
 ## The mannequin's white 16x16 quad -- modulate carries its state (red heat, blue wetness); the CA image stays the world's picture.
 func _mannequin_texture() -> ImageTexture:
@@ -630,20 +603,20 @@ func _step_mannequin(k: int) -> void:
 ## Bridge acceptance examples: fresh Rooms with registered bodies, driven directly -- the exchanges, the dunk, and the first PRNG-consuming determinism proof.
 func run_bridge_tests() -> void:
 	print("== bridge self-tests ==")
-	_bt("BT1  a full tile drinks to saturation", _bt_soak)
-	_bt("BT2  the saturated body drips dry", _bt_drip)
-	_bt("BT3  cross-talk steams the wet body", _bt_cross_talk)
-	_bt("BT4  the dunk: one tile of steam, budget-neutral", _bt_dunk)
-	_bt("BT5  fire dries her out", _bt_fire_loop)
-	_bt("BT6  DRY drinks the damp underfoot", _bt_dry)
-	_bt("BT7  same seed, same body, same stream", _bt_seed)
-	_bt("BT8  the bow wave pushes back through her entry", _bt_bow_wave)
-	_bt("BT9  the dunk under volume is partial", _bt_partial_dunk)
-	_bt("BT10 the sealed pool splashes over its surface", _bt_splash)
-	_bt("BT11 standing in the pool does not pump it over the walls", _bt_no_drain)
-	_bt("BT12 the standing claim holds the water out", _bt_standing_claim)
-	_bt("BT13 the walking wake keeps the basin and the family", _bt_walk)
-	_bt("BT14 the dunk leaves a drink -- boil, then absorb, one tick", _bt_dunk_drink)
+	_example("BT1  a full tile drinks to saturation", _bt_soak)
+	_example("BT2  the saturated body drips dry", _bt_drip)
+	_example("BT3  cross-talk steams the wet body", _bt_cross_talk)
+	_example("BT4  the dunk: one tile of steam, budget-neutral", _bt_dunk)
+	_example("BT5  fire dries her out", _bt_fire_loop)
+	_example("BT6  DRY drinks the damp underfoot", _bt_dry)
+	_example("BT7  same seed, same body, same stream", _bt_seed)
+	_example("BT8  the bow wave pushes back through her entry", _bt_bow_wave)
+	_example("BT9  the dunk under volume is partial", _bt_partial_dunk)
+	_example("BT10 the sealed pool splashes over its surface", _bt_splash)
+	_example("BT11 standing in the pool does not pump it over the walls", _bt_no_drain)
+	_example("BT12 the standing claim holds the water out", _bt_standing_claim)
+	_example("BT13 the walking wake keeps the basin and the family", _bt_walk)
+	_example("BT14 the dunk leaves a drink -- boil, then absorb, one tick", _bt_dunk_drink)
 	print("== done ==")
 
 ## BT14: the exchange order ruling as an assert -- a dry hot body boils the tile first, then drinks what is left, in the same tick.
@@ -770,16 +743,6 @@ func _bt_splash() -> String:
 	if _family_total(r, b) != fam0:
 		return "family drifted %d" % (fam0 - _family_total(r, b))
 	return ""
-
-## PASS/FAIL runner for the BT examples (the RT pattern: a Callable returning "" on success, the reason as the failure).
-func _bt(name: String, fn: Callable) -> void:
-	var err: String = fn.call()
-	if err == "":
-		suite_pass += 1
-		print("PASS  %s" % name)
-	else:
-		suite_fail += 1
-		print("FAIL  %s -- %s" % [name, err])
 
 ## The closed water family across the actor boundary: water + steam + damp + wetness -- one unit since the 1:1 retune, one sum.
 func _family_total(r: Room, body: ThermalBody) -> int:

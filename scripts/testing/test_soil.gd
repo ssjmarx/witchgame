@@ -141,15 +141,6 @@ func _load_preset(keycode: int) -> void:
 	paused = false
 	renderer.redraw()
 
-## Paint one soil subtile into the lowest empty slot of tile t (brush is a god hand -- no flow stamp).
-func _brush_soil(t: Vector2i) -> void:
-	var i := stone.idx(t.x, t.y)
-	var n: int = stone.packet.get_sub(i, TilePacket.K_SOIL)
-	for bit in [GridSand.BL, GridSand.BR, GridSand.TL, GridSand.TR]:
-		if (n & bit) == 0:
-			stone.packet.set_sub(i, TilePacket.K_SOIL, n | bit)
-			return
-
 ## Carve one preset-key example and route it through the shared runner.
 @warning_ignore("shadowed_variable_base_class")
 func _test(name: String, preset_key: int, check: Callable) -> void:
@@ -344,9 +335,6 @@ func _st_sealed_sort() -> void:
 			return "water %d above the settled soil, expected a near-full column" % pk.get_pool(above, TilePacket.Mat.WATER)
 		return "", Callable())
 
-## The lab's whole suite behind one door: K and run_all both call this.
-func run_suite() -> bool:
-	suite_pass = 0
-	suite_fail = 0
+## The lab's example set: the soil examples in order.
+func run_tests() -> void:
 	run_soil_tests()
-	return suite_fail == 0

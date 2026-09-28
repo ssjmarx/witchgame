@@ -72,6 +72,37 @@ func _clear_world() -> void:
 func _paint_stroke(_t: Vector2i) -> bool:
 	return false
 
+## The shared RMB erase verb: clear the soil nibble, pool water, oil, gases, fuel, and fire at t, then the terrain -- labs that mirror colliders sync after.
+func _erase_tile(t: Vector2i) -> void:
+	var i := stone.idx(t.x, t.y)
+	stone.packet.set_sub(i, TilePacket.K_SOIL, 0)
+	water.set_water(t.x, t.y, 0)
+	for m in [TilePacket.Mat.OIL, TilePacket.Mat.STEAM, TilePacket.Mat.SMOKE]:
+		stone.packet.set_pool(i, m, 0)
+	stone.packet.set_fuel(i, 0)
+	stone.packet.set_fire(i, 0)
+	stone.set_terrain(t.x, t.y, GridStone.Terrain.AIR)
+
+## The shared LMB solid verb: lay stone or wood onto cleared ground only (AIR with an empty pool) -- wood arrives with a full fuel tank; true when the picture changed.
+func _lay_solid(t: Vector2i, terrain: int) -> bool:
+	var i := stone.idx(t.x, t.y)
+	if stone.packet.get_terrain(i) != TilePacket.T.AIR or stone.packet.pool_total(i) > 0:
+		return false
+	if not stone.set_terrain(t.x, t.y, terrain):
+		return false
+	if terrain == GridStone.Terrain.WOOD:
+		stone.packet.set_fuel(i, 255)
+	return true
+
+## The shared soil brush: one subtile into the lowest empty slot of tile t (a god hand -- no flow stamp).
+func _brush_soil(t: Vector2i) -> void:
+	var i := stone.idx(t.x, t.y)
+	var n: int = stone.packet.get_sub(i, TilePacket.K_SOIL)
+	for bit in [GridSand.BL, GridSand.BR, GridSand.TL, GridSand.TR]:
+		if (n & bit) == 0:
+			stone.packet.set_sub(i, TilePacket.K_SOIL, n | bit)
+			return
+
 ## Track the hover tile; run held strokes; refresh the HUD.
 func _process(_delta: float) -> void:
 	var t := _hover_tile()
@@ -227,17 +258,14 @@ func _run_example(name: String, rows: Array, check: Callable, setup: Callable) -
 	for k in 3:
 		if t_sand.total(k) != s0[k]:
 			sub_txt = " [subtile mass kind %d: %d -> %d]" % [k, s0[k], t_sand.total(k)]
-	if err == "" and drift_txt == "" and sub_txt == "":
-		suite_pass += 1
-		print("PASS  %s" % name)
-		return
 	var why := err
 	if why == "" and drift_txt != "":
 		why = "conservation drifted"
 	elif why == "" and sub_txt != "":
 		why = "subtile mass changed"
-	suite_fail += 1
-	print("FAIL  %s -- %s%s%s" % [name, why, drift_txt, sub_txt])
+	if why != "":
+		why += drift_txt + sub_txt
+	_record(name, why)
 
 
 ## Conservation policy for the acceptance runner: every material but water is individually constant, and water pairs with damp (soak's sanctioned 1:1 channel). Scenes whose reactions transform matter override with their own sanctioned channels.
@@ -254,9 +282,26 @@ func drift_report(w0: PackedInt32Array, pk: TilePacket) -> String:
 	if parts.is_empty():
 		return ""
 	return " [drift: " + ", ".join(parts) + "]"
-	
-## Override: run this lab's whole acceptance suite and return false when any example failed; K and the headless runner share this one path.
+## The regression entry point: reset the tally, run this lab's examples, return the verdict -- run_all and every scene's K key share this one path.
 func run_suite() -> bool:
 	suite_pass = 0
 	suite_fail = 0
+	run_tests()
 	return suite_fail == 0
+
+## Override: this lab's example set, in order -- run_suite owns the tally reset and the verdict.
+func run_tests() -> void:
+	pass
+
+## One PASS/FAIL tally line -- the single verdict path every example lands on: empty err passes, anything else prints as the reason.
+func _record(name: String, err: String) -> void:
+	if err == "":
+		suite_pass += 1
+		print("PASS  %s" % name)
+		return
+	suite_fail += 1
+	print("FAIL  %s -- %s" % [name, err])
+
+## Run one example -- a Callable returning "" on success, the failure reason otherwise -- and record its verdict.
+func _example(name: String, fn: Callable) -> void:
+	_record(name, fn.call())
