@@ -12,8 +12,6 @@ enum Level { DRY, WET, HALF, FULL }
 
 const LINE := 16              # water units per visible scanline (SACRED)
 const AIR_PASSABLE_MAX := 15  # water below one line counts as air for pockets
-const PRESSURE_RATE := 64     # units/tick per square of opening
-const PRESSURE_MIN_DIFF := 2  # top-up hysteresis, in donor-material quanta -- the actionable floor is this × density[m]
 const DIFFUSER_FLOW := 96    # <tune> — flow_mag above this marks a diffuser (world §13; game-side consumer)
 
 # flow direction codes (8-way); FLOW_DX/FLOW_DY convert a code to tile steps
@@ -32,10 +30,12 @@ var stone: GridStone
 var pk: TilePacket            # alias of stone.packet — the data lives there
 var tick_count := 0           # ticks so far; parity flips the sweep direction
 
-# the sibling modules: the flow export, the gas rules, and the label pass, over this room's packet
+# the sibling modules: flow export, gas rules, label pass, pool geometry, and the seek machinery, over this room's packet
 var flow: WaterFlow
 var gas: WaterGas
 var labels: WaterAnalyze
+var pools: WaterPools
+var seek: WaterSeek
 var _level_snap := PackedByteArray()   # reused per tick -- the snapshot allocates nothing
 
 ## Size the field, bind the packet via the stone facade; everything starts dry.
@@ -48,6 +48,8 @@ func _init(w: int, h: int, terrain: GridStone) -> void:
 	flow = WaterFlow.new(w, h)
 	gas = WaterGas.new(w, h, terrain, flow)
 	labels = WaterAnalyze.new(w, h, terrain)
+	pools = WaterPools.new(w, h, terrain, labels, flow)
+	seek = WaterSeek.new(w, h, terrain, labels, pools, flow)
 	
 	_level_snap.resize(w * h)
 
@@ -107,6 +109,10 @@ func is_air_sealed(x: int, y: int) -> bool:
 		return false
 	return not labels.escape_at(idx(x, y))
 
+## Escape-gated headroom walk, delegated to the pool module -- the sand rules' entry gate reads it (the signature stays GridWater's public API).
+func headroom_above(x: int, y: int) -> bool:
+	return pools.headroom_above(x, y)
+
 ## Register matter arriving at tile i (mag units, dir code); magnitudes sum, direction follows the largest single arrival (first stamp wins ties — sweep order is fixed, so deterministic); sim moves stamp inline, room sources like rain stamp at tick head.
 func flow_stamp(i: int, dir: int, mag: int) -> void:
 	flow.stamp(i, dir, mag)
@@ -150,7 +156,7 @@ func tick() -> void:
 			gas.cell_pass_all(m, tick_count)
 		else:
 			_cell_pass_all(m)
-			_seek_level_pass(m)
+			seek.pass_all(m)
 	gas.exchange_pass(tick_count)
 	if _two_mats_present():
 		_sort_pass()   # a trade needs two materials; a single-material field has no pair
@@ -198,13 +204,6 @@ func _xy_of(i: int) -> Vector2i:
 	# integer division is intentional
 	@warning_ignore("integer_division")
 	return Vector2i(i % width, i / width)
-
-## Topmost row of the contiguous visible-material-m segment containing (x, y). Caller guarantees m >= LINE at (x, y); with no visible segment the walk returns y + 1 -- a sentinel row, not a coordinate.
-func _segment_top(x: int, y: int, m: int) -> int:
-	var t := y
-	while t >= 0 and pk.get_pool(idx(x, t), m) >= LINE:
-		t -= 1
-	return t + 1
 
 ## Run _cell_pass over every cell in this tick's sweep order.
 func _cell_pass_all(m: int) -> void:
@@ -286,7 +285,7 @@ func _gate(t: int, src: int, m: int) -> bool:
 		return true
 	# (c) the donor's own headspace is this pocket: it recedes as material moves
 	var sp := _xy_of(src)
-	var top := _segment_top(sp.x, sp.y, m)
+	var top := pools.segment_top(sp.x, sp.y, m)
 	if top > 0:
 		var above := idx(sp.x, top - 1)
 		if not stone.is_solid(sp.x, top - 1) and pk.pool_total(above) <= AIR_PASSABLE_MAX \
@@ -300,160 +299,6 @@ func _gate(t: int, src: int, m: int) -> bool:
 			return true
 	return false
 
-## Rule four: try to equalize pressure across each run of liquid tiles (any material — mixtures are one conduit) for material m.
-func _seek_level_pass(m: int) -> void:
-	for y in range(height - 1, -1, -1):
-		var x := 0
-		while x < width:
-			if pk.pool_total(idx(x, y)) >= LINE:
-				var x1 := x
-				while x1 + 1 < width and pk.pool_total(idx(x1 + 1, y)) >= LINE:
-					x1 += 1
-				_seek_level_run(x, x1, y, m)
-				x = x1 + 1
-			else:
-				x += 1
-
-## Level one horizontal run of material m by pressure: heads are density-weighted column integrals from each surface to the run row -- true hydrostatic pressure at the choke. Donors must carry m at the conduit row; every column of the run may receive.
-func _seek_level_run(x0: int, x1: int, y: int, m: int) -> void:
-	var rho := TilePacket.DENSITY[m]
-	var ptops := PackedInt32Array()
-	ptops.resize(width)
-	ptops.fill(-1)
-	var heads := PackedInt32Array()
-	heads.resize(width)
-	var cols: Array = []
-	for x in range(x0, x1 + 1):
-		ptops[x] = _pool_top(x, y)
-		var h := 0
-		for yy in range(ptops[x], y + 1):
-			for m2 in TilePacket.MAT_COUNT:
-				var v := pk.get_pool(idx(x, yy), m2)
-				if v > 0:
-					h += v * TilePacket.DENSITY[m2]
-		heads[x] = h
-		cols.append(x)
-	if cols.size() < 2:
-		return   # a single-column conduit has no pair to trade
-	cols.sort_custom(func(a, b): return heads[a] < heads[b])
-	# receivers lowest-pressure first, donors highest first; a failed transfer falls through to the next pair
-	for ti in cols.size():
-		var t: int = cols[ti]
-		for si in range(cols.size() - 1, ti, -1):
-			var s: int = cols[si]
-			if pk.get_pool(idx(s, y), m) < LINE:
-				continue   # donors must carry m at the conduit row
-			var diff := heads[s] - heads[t]
-			if diff < PRESSURE_MIN_DIFF * rho:
-				break   # donors only get shorter from here
-			if _transfer_level(s, t, y, diff, ptops, m) > 0:
-				return
-
-## Move volume of material m from column s to receiver t so their pressures converge; returns units moved. Capped by half the pressure difference (no overshoot) and viscosity; the deposit lands at m's surface, the pool floor when m sinks, or the pool surface when m floats -- a full entry makes room by displacement: lighter residents yield in place, a pure-m entry thickens at the interface above, and air above an m-surface is the threshold-gated rise.
-@warning_ignore("integer_division")
-func _transfer_level(s: int, t: int, y: int, diff: int, ptops: PackedInt32Array, m: int) -> int:
-	var rho := TilePacket.DENSITY[m]
-	var s_top := _segment_top(s, y, m)
-	# giving side: the column must be able to recede (air replaces the liquid)
-	if s_top > 0 and stone.is_solid(s, s_top - 1):
-		# capped by stone, but it may still recede if a side pocket expands into the vacated cells
-		var surf := idx(s, s_top)
-		var side_air := (s > 0 and not stone.is_solid(s - 1, s_top) and pk.pool_total(surf - 1) <= AIR_PASSABLE_MAX) \
-				or (s < width - 1 and not stone.is_solid(s + 1, s_top) and pk.pool_total(surf + 1) <= AIR_PASSABLE_MAX)
-		if not side_air:
-			return 0
-	var avail := 0
-	for yy in range(s_top, y + 1):
-		avail += pk.get_pool(idx(s, yy), m)
-	if avail <= 0:
-		return 0
-	# the receiver's entry: m's own surface when the column carries m; else the pool floor (m sinks) or the pool surface (m floats)
-	var pt: int = ptops[t]
-	var pb := _pool_bottom(t, y)
-	var entry := idx(t, pt)
-	var same_mat := false
-	for yy in range(pt, pb + 1):
-		if pk.get_pool(idx(t, yy), m) >= LINE:
-			entry = idx(t, _segment_top(t, yy, m))
-			same_mat = true
-			break
-	if not same_mat:
-		var surf_light := pk.lightest_mat(idx(t, pt))
-		if TilePacket.DENSITY[m] > TilePacket.DENSITY[surf_light]:
-			entry = idx(t, pb)
-		else:
-			entry = idx(t, pt)
-	# receiving capacity: room at the entry, the gated rise above an m-surface, or displacement
-	var target := entry
-	var room := pk.pool_free(entry)
-	if room <= 0 and same_mat and diff >= TilePacket.POOL_MAX * rho:
-		var e_p := _xy_of(entry)
-		if e_p.y > 0:
-			var above := idx(t, e_p.y - 1)
-			if not stone.is_solid(t, e_p.y - 1) and pk.pool_total(above) <= AIR_PASSABLE_MAX \
-					and _pocket_vented_for(above, s, s_top):
-				var r2 := pk.pool_free(above)
-				if r2 > 0:
-					target = above
-					room = r2
-	@warning_ignore("integer_division")
-	var want := mini(mini(mini(PRESSURE_RATE, diff / (2 * rho)), avail), TilePacket.VISCOSITY[m])
-	if want <= 0:
-		return 0
-	if target == entry and room <= 0:
-		var lm := pk.lightest_mat(entry)
-		if lm >= 0 and TilePacket.DENSITY[lm] < rho:
-			room += _eject_lightest_up(entry, want - room)
-		else:
-			var e_y := _xy_of(entry)
-			if e_y.y == 0:
-				return 0   # no column above to yield
-			var iface := entry - width
-			if pk.pool_total(iface) < LINE:
-				return 0
-			var if_room := pk.pool_free(iface)
-			room = if_room + _eject_lightest_up(iface, want - if_room)
-			target = iface
-	var move := mini(want, room)
-	if move <= 0:
-		return 0
-	# remove from the donor's surface, walking down toward the junction; take_pool reports what it got, so the walk cannot over-draw
-	var remaining := move
-	var yy2 := s_top
-	while remaining > 0:
-		remaining -= pk.take_pool(idx(s, yy2), m, remaining)
-		yy2 += 1
-	# deposit at the target (the entry, the interface above it, or one above when the rise fired)
-	pk.add_pool(target, m, move)
-	if target != entry:
-		flow_stamp(target, FlowDir.UP, move)
-	else:
-		flow_stamp(target, FlowDir.RIGHT if s < t else FlowDir.LEFT, move)
-	return move
-
-## Can the air above the receiver's surface give way to this transfer? s and s_top name the donor's own receding headspace.
-func _pocket_vented_for(cell: int, s: int, s_top: int) -> bool:
-	if labels.escape_at(cell):
-		return true
-	if s_top > 0:
-		var s_above := idx(s, s_top - 1)
-		if not stone.is_solid(s, s_top - 1) and pk.pool_total(s_above) <= AIR_PASSABLE_MAX \
-				and labels.region_at(s_above) == labels.region_at(cell):
-			return true  # the donor's own receding headspace
-	return false
-
-## Escape-gated column walk: does some tile above (x, y) have pool headroom with air that reaches open sky? The entry gate for deficit landings; the escape map is the one-tick-stale opinion (_gate's family).
-func headroom_above(x: int, y: int) -> bool:
-	var yy := y - 1
-	while yy >= 0:
-		var i := idx(x, yy)
-		if TilePacket.FULL_SOLID[pk.get_terrain(i)]:
-			return false
-		if pk.pool_free(i) > 0 and labels.escape_at(i):
-			return true
-		yy -= 1
-	return false
-
 ## Rule five: every over-budget tile ejects its excess up its column -- solids sink, liquid climbs. Lightest material first; leftover excess persists (the entry gate should have prevented it).
 func _displacement_pass() -> void:
 	for y in range(height - 1, -1, -1):
@@ -461,7 +306,7 @@ func _displacement_pass() -> void:
 			var i := idx(x, y)
 			var excess := pk.pool_total(i) - pk.pool_capacity(i)
 			if excess > 0:
-				_eject_lightest_up(i, excess)
+				pools.eject_lightest_up(i, excess)
 
 ## The all-material volume checksum -- read from the ledger (booked_pool_total); damp changes only in the reaction tick, which owns its own books. The ledger assert is the catch, not this one.
 func _checksum_all() -> int:
@@ -518,44 +363,3 @@ func add_liquid(x: int, y: int, m: int, amount: int) -> bool:
 	if not in_bounds(x, y):
 		return false
 	return pk.add_pool(idx(x, y), m, amount) > 0
-
-## Topmost row of the contiguous visible-liquid segment (any material) containing (x, y). Caller guarantees pool_total >= LINE at (x, y); with no segment the walk returns y + 1 -- a sentinel row, never a coordinate (the _segment_top contract).
-func _pool_top(x: int, y: int) -> int:
-	var t := y
-	while t >= 0 and pk.pool_total(idx(x, t)) >= LINE:
-		t -= 1
-	return t + 1
-
-## Bottom-most row of the contiguous visible-liquid segment (any material) containing (x, y). Caller guarantees pool_total >= LINE at (x, y); the walk is bounded by the grid.
-func _pool_bottom(x: int, y: int) -> int:
-	var b := y
-	while b + 1 < height and pk.pool_total(idx(x, b + 1)) >= LINE:
-		b += 1
-	return b
-
-## Eject up to amount units of the lightest materials from tile i up its column, depositing at the first free escape-reachable tiles -- rule five's incompressibility walk, factored: the displacement pass and the lateral deposit share it. Returns units ejected; flow-stamped UP per deposit tile.
-func _eject_lightest_up(i: int, amount: int) -> int:
-	var remaining := amount
-	var p := _xy_of(i)
-	var yy := p.y - 1
-	while remaining > 0 and yy >= 0:
-		var h := idx(p.x, yy)
-		if TilePacket.FULL_SOLID[pk.get_terrain(h)]:
-			break
-		var moved := 0
-		if labels.escape_at(h):
-			while remaining > 0 and pk.pool_free(h) > 0:
-				var m := pk.lightest_mat(i)
-				if m < 0:
-					break
-				var have := pk.get_pool(i, m)
-				var room := pk.pool_free(h)
-				var chunk := mini(remaining, mini(have, room))
-				pk.take_pool(i, m, chunk)
-				pk.add_pool(h, m, chunk)
-				moved += chunk
-				remaining -= chunk
-		if moved > 0:
-			flow_stamp(h, FlowDir.UP, moved)
-		yy -= 1
-	return amount - remaining
