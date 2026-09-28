@@ -5,7 +5,25 @@
 
 **21 files | 334 functions**
 
-## res://scripts/actor_bridge/actor_bridge.gd
+## res://scripts/actors/witch.gd
+
+The witch: a CharacterBody2D on a ThermalBody. Identical legs (the 10px
+jump is SACRED), wading and swim by tile tier, the sheet driving her anim
+state. She never writes a tile -- everything crosses the bridge.
+
+- `sample_liquid() -> void` - Sample her locomotion read at the tick (world.md §5): the feet tile's liquid and its free capacity, from the settled phase.
+- `_init(p_room: Room) -> void` - Bind the room, build the thermal body with her volume, register it -- the customs office owns her exchanges from here on.
+- `_ready() -> void` - The sheet sprite and the 8x24 hitbox -- a subtile wide, three tall, centered on the sprite; the origin is her soles' center.
+- `_exit_tree() -> void` - Leave the room, leave the registry.
+- `_physics_process(delta: float) -> void` - Frame-side truth: read input and the tick-sampled feet tile, move, then push her state to the thermal body and the sprite.
+- `_anim(delta: float, crouch: bool) -> void` - The sheet drives the state machine: the crouch (and dive) pose first, then the air frame, then the ping-pong cycles.
+- `_sync_body(feet: Vector2i, head: Vector2i) -> void` - Push her frame-side truth to the body: the overlapped column, per-tile volumes from the hitbox's subtile rows (bottom-heavy: 2 at her feet when aligned), the support tile, and the entry tile.
+- `teleport(pos: Vector2) -> void` - Place her at pos with a clean slate: no velocity, no stale entry tile (the bow wave forgets).
+- `_feet_tile() -> Vector2i` - The tile holding the pixel just above her soles.
+- `_head_tile() -> Vector2i` - The tile holding her hitbox's top pixel -- the hat is picture; the hitbox is her body to the engine.
+- `_liquid(t: Vector2i) -> int` - Liquid units at tile t -- the pool minus the gases (the renderer's _liquid_total, read for locomotion).
+
+## res://scripts/bridge/actor_bridge.gd
 
 The customs office (world.md §4): thermal bodies trade heat and wetness
 with the CA at the tick head, PRNG-shuffled body order, integer quanta
@@ -30,7 +48,7 @@ only. The bridge holds no matter and no census -- bodies are scene-owned.
 - `_eject_up(src: int, x: int, y: int, left: int) -> int` - The overflow's fallback: climb the source column and pour into the first headroom (rule five's walk, bridge-side) -- the splash above the surface.
 - `_pick_index(b: ThermalBody) -> int` - One overlapped tile index, PRNG-picked -- the two-tile heroine law (world.md §2): each thermal operation samples one overlapped tile per tick.
 
-## res://scripts/actor_bridge/collision_mirror.gd
+## res://scripts/bridge/collision_mirror.gd
 
 The matter-to-physics half of the contact contract (world.md §5): the CA
 is truth, so colliders mirror the packet's solid map at subtile resolution,
@@ -42,7 +60,7 @@ re-diffed every tick -- fire burns the floor out from under her.
 - `sync() -> void` - One diff per tick: read the packet's solid map, patch colliders where it changed -- no signals (set_sub never emitted one, and wholesale restore wouldn't either).
 - `_cell_solid(cx: int, cy: int) -> bool` - Is subtile cell (cx, cy) solid: full-solid terrain claims the whole tile; otherwise any subtile kind's bit claims the cell.
 
-## res://scripts/actor_bridge/thermal_body.gd
+## res://scripts/bridge/thermal_body.gd
 
 The thermal half of the actor state block (world.md §2): heat, wetness on
 the 1:1 lattice (water, steam, damp, wetness one unit since the retune),
@@ -52,25 +70,35 @@ drip_mul, and tiles. The actor writes at frame speed; the bridge spends.
 - `is_saturated() -> bool` - True at saturation -- the carry window's ceiling.
 - `volume_at(k: int) -> int` - Per-tile volume in nibbles: the parallel array when the owner wrote one, else the uniform default.
 
-## res://scripts/actors/witch.gd
+## res://scripts/render/element_renderer.gd
 
-The witch: a CharacterBody2D on a ThermalBody. Identical legs (the 10px
-jump is SACRED), wading and swim by tile tier, the sheet driving her anim
-state. She never writes a tile -- everything crosses the bridge.
+world.md §9: one Image the size of the map, regenerated at tick rate, pushed
+through an ImageTexture, drawn under actors. The sim state *is* the picture.
+Regenerating 240×240 RGBA ten times a second is nothing — keep it dumb.
 
-- `sample_liquid() -> void` - Sample her locomotion read at the tick (world.md §5): the feet tile's liquid and its free capacity, from the settled phase.
-- `_init(p_room: Room) -> void` - Bind the room, build the thermal body with her volume, register it -- the customs office owns her exchanges from here on.
-- `_ready() -> void` - The sheet sprite and the 8x24 hitbox -- a subtile wide, three tall, centered on the sprite; the origin is her soles' center.
-- `_exit_tree() -> void` - Leave the room, leave the registry.
-- `_physics_process(delta: float) -> void` - Frame-side truth: read input and the tick-sampled feet tile, move, then push her state to the thermal body and the sprite.
-- `_anim(delta: float, crouch: bool) -> void` - The sheet drives the state machine: the crouch (and dive) pose first, then the air frame, then the ping-pong cycles.
-- `_sync_body(feet: Vector2i, head: Vector2i) -> void` - Push her frame-side truth to the body: the overlapped column, per-tile volumes from the hitbox's subtile rows (bottom-heavy: 2 at her feet when aligned), the support tile, and the entry tile.
-- `teleport(pos: Vector2) -> void` - Place her at pos with a clean slate: no velocity, no stale entry tile (the bow wave forgets).
-- `_feet_tile() -> Vector2i` - The tile holding the pixel just above her soles.
-- `_head_tile() -> Vector2i` - The tile holding her hitbox's top pixel -- the hat is picture; the hitbox is her body to the engine.
-- `_liquid(t: Vector2i) -> int` - Liquid units at tile t -- the pool minus the gases (the renderer's _liquid_total, read for locomotion).
+- `_init(terrain: GridStone, field: GridWater) -> void` - Bind the sim pair and create the map-sized image and texture.
+- `redraw() -> void` - Repaint every tile plus overlays into the texture; call once per tick.
+- `_draw_tile(x: int, y: int) -> void` - Paint one tile: beveled stone or planked wood (fire quads ride either), gases dithered from the top, liquids leveling from the bottom over them, soil quads over the fill they displace, fire bits on top of everything the tile holds.
+- `_draw_debug() -> void` - Overlay air pockets, per-segment level lines, and the tile grid (G).
+- `_draw_cursor() -> void` - Draw the hover cursor as a tile outline.
+- `_draw_flow(x: int, y: int, px: int, py: int) -> bool` - Waterfall streaks: downward flow at mag >= FLOW_STREAK with dir DOWN draws hashed vertical streaks keyed on (tile, tick_count) — hash-based, never the sim PRNG (world §1). Returns true when streaks were drawn; the caller then draws no fill or crest -- falling water is streaks, not pooled lines.
+- `_draw_soil(x: int, y: int, px: int, py: int, n: int) -> void` - Loose soil: one 8x8 quad per set nibble bit, light lip on subtiles with no soil directly above, damp darkening from the top of the occupied region (8 damp per pixel line -- the creeping front).
+- `_lifted_lines(v: int, n: int) -> int` - Waterline lift over the tile's own soil subtiles: a squeezed pool reads higher on the fill. v = raw lines (units >> 4), n = soil nibble; returns the drawn line count, clamped to 15.
+- `_draw_water(x: int, y: int, px: int, py: int, n: int) -> void` - Draw one tile's liquids (the gases drew first, top-down; liquids render over gas by ruling): waterfall streaks replace the fill; a tile covered by liquid above fills its full height stacked by share; the surface tile fills by the subtile-lifted line count, stacked densest from the bottom, crest on the topmost material.
+- `bind_sand(p_sand: GridSand) -> void` - Bind the solid field for its flow export; scenes without one skip the arrows.
+- `_majority(i: int) -> int` - Majority liquid at tile i -- the streak color's proxy (ties and empties read as water).
+- `_draw_gas(x: int, y: int, px: int, py: int) -> void` - Gases draw top-down, eight units per line: checker dither from the tile's top to a full tile at 128, then one solid line per further eight (ceil) until the tile reads fully solid at 255 -- half liquid density, sub-eight films draw nothing. Amount and ratio are separate reads: the row count comes from the tile's TOTAL gas, and the rows split across the gases by share, lightest band on top (the liquid stack partition, mirrored).
+- `_liquid_total(i: int) -> int` - Liquid units at tile i -- the pool minus the two gases; lines, crests, and the covered check all read this, never pool_total.
+- `_draw_fire(x: int, y: int, px: int, py: int) -> void` - Fire bits draw as 8x8 ember quads on the fuel tile plus dancing licks -- one per bit, in the bottom subtile row of the non-solid tile above, hash-keyed on (tile, tick, bit) so every flame tongues on its own phase; never the sim PRNG (world §1). The lick is pure render: flame is picture, air is rules.
 
-## res://scripts/element_grid/grid_reactions.gd
+## res://scripts/render/palette.gd
+
+Every color the project draws with, collected in one class of constants.
+Day-one discipline (world.md §9): cold blue-gray base, water blues, and — since
+the fire lab — the warm bank: wood tans, gases, the fire cycle. Swap for DB16 when real art starts.
+
+
+## res://scripts/sim/grid_reactions.gd
 
 The chemical reaction engine -- the third system beside liquid and solid
 movement. Soak trades pool water for damp; the fire solver burns fuel, boils
@@ -97,7 +125,7 @@ water and damp up the tiered ladder, vents smoke, and engulfs the tile; ignition
 - `snapshot_ignition() -> PackedByteArray` - The ignition overlay, value-copied for a room snapshot; the timer is persistent, the suppression mask is not.
 - `restore_ignition(b: PackedByteArray) -> void` - Write the ignition overlay back and blank the suppression mask -- it rebuilds from the fire bits on the next tick.
 
-## res://scripts/element_grid/grid_sand.gd
+## res://scripts/sim/grid_sand.gd
 
 One tick: expand, run the sand pass, repack and book. Water's displacement pass resolves
 repack's deficits same-tick; the packet assert is the reaction tick's (last engine's
@@ -127,7 +155,7 @@ privilege, per world §3).
 - `_swap_ok(sx: int, sy: int, tx: int, ty: int, kind: int) -> bool` - The sealed-chamber swap gate: the destination terrain must hold a pool (the entry gate's first clause -- the swap replaces budget and escape, never terrain), then the source must absorb the liquid the target sheds. Soil tolerates the one-unit clamp gap (its damp drinks the squeeze); stone and ice demand the exact fit.
 - `_swap_move(sx: int, sy: int, tx: int, ty: int, kind: int) -> void` - Perform the vertical swap: the subtile crosses (grid move, flow stamp, damp handoff), then the target sheds its excess up into the source -- take-then-add, booked, no escape needed: the vacated space is the liquid's home.
 
-## res://scripts/element_grid/grid_stone.gd
+## res://scripts/sim/grid_stone.gd
 
 Static terrain layer — a facade over the room's TilePacket.
 The packet owns every column; this class owns the terrain RULES:
@@ -141,7 +169,7 @@ out-of-bounds reads as STONE, solidity, and the change signal.
 - `set_terrain(x: int, y: int, t: int) -> bool` - Set terrain at (x, y); true (with emit) only when the value changed.
 - `clear() -> void` - Reset every tile to AIR. Terrain only — the pool columns are not ours.
 
-## res://scripts/element_grid/grid_water.gd
+## res://scripts/sim/grid_water.gd
 
 The liquid engine — a view over the shared TilePacket. Every pool liquid runs the four
 movement rules as its own densest-first pass (viscosity-throttled), then the sort pass
@@ -199,7 +227,7 @@ trades densities; gases rise, spread laterally when blocked, and hop up-diagonal
 - `_exchange_pass() -> void` - Horizontal gas exchange (rule six, diffusion-shaped): each gas trades half its difference between adjacent gas-holding tiles, capped by GAS_SWAP — the equalizer seek level refuses to be; runs after the movers and before the sort, so the tick ends stratified.
 - `_exchange_pair(a: int, b: int) -> void` - Trade both gases between horizontal neighbors a and b: per gas half the difference (capped by GAS_SWAP), taking from both givers BEFORE any add — a full tile's inflow is covered by its own simultaneous outflow — and refused adds refund the giver, so scarce capacity pinches but never destroys.
 
-## res://scripts/element_grid/room.gd
+## res://scripts/sim/room.gd
 
 One CA domain (world.md §8): the engine quintet around one packet -- the
 bridge runs at the tick head -- plus the ruling, the per-room PRNG, and
@@ -211,7 +239,7 @@ the snapshot/restore machinery. Unobserved rooms are never ticked.
 - `restore(s: RoomState) -> void` - Write the census back, rebuild the maintained caches, end on the packet assert -- restore is sound outside the tick, not just before the next one.
 - `reset() -> void` - Reset to a blank world through every owning clear path, terrain first (a cleared WOOD tile reads no damp cap); ends on the assert.
 
-## res://scripts/element_grid/room_state.gd
+## res://scripts/sim/room_state.gd
 
 A room's persistent census as value copies (world.md §8): fourteen packet
 columns, the ignition overlay, both sweep-parity counters. Derived state
@@ -219,7 +247,7 @@ is never stored -- every engine rebuilds it at its tick head.
 
 - `same_bytes(b: RoomState) -> bool` - Byte-exact census comparison -- the restore proofs' one call.
 
-## res://scripts/element_grid/tile_packet.gd
+## res://scripts/sim/tile_packet.gd
 
 The unified per-tile packet (world.md §2), stored structure-of-arrays:
 one PackedByteArray column per field, one row per tile. The tile index
@@ -280,34 +308,6 @@ is the row number.
 - `load_column(i: int, b: PackedByteArray) -> void` - Point persistent column i at bytes (restore path); the write bypasses books, present counts, and fire_present -- the caller rebuilds them.
 - `rebuild_books() -> void` - Recompute every booked row from fresh recounts -- the restore path's ledger rebuild; green asserts prove maintained == recounted, so this arrives consistent.
 - `rebuild_present() -> void` - Recompute the present counts from the columns -- the absent-pass gates' bookkeeping, bypassed by wholesale restore writes; restore-time only, never per tick.
-
-## res://scripts/fx/element_renderer.gd
-
-world.md §9: one Image the size of the map, regenerated at tick rate, pushed
-through an ImageTexture, drawn under actors. The sim state *is* the picture.
-Regenerating 240×240 RGBA ten times a second is nothing — keep it dumb.
-
-- `_init(terrain: GridStone, field: GridWater) -> void` - Bind the sim pair and create the map-sized image and texture.
-- `redraw() -> void` - Repaint every tile plus overlays into the texture; call once per tick.
-- `_draw_tile(x: int, y: int) -> void` - Paint one tile: beveled stone or planked wood (fire quads ride either), gases dithered from the top, liquids leveling from the bottom over them, soil quads over the fill they displace, fire bits on top of everything the tile holds.
-- `_draw_debug() -> void` - Overlay air pockets, per-segment level lines, and the tile grid (G).
-- `_draw_cursor() -> void` - Draw the hover cursor as a tile outline.
-- `_draw_flow(x: int, y: int, px: int, py: int) -> bool` - Waterfall streaks: downward flow at mag >= FLOW_STREAK with dir DOWN draws hashed vertical streaks keyed on (tile, tick_count) — hash-based, never the sim PRNG (world §1). Returns true when streaks were drawn; the caller then draws no fill or crest -- falling water is streaks, not pooled lines.
-- `_draw_soil(x: int, y: int, px: int, py: int, n: int) -> void` - Loose soil: one 8x8 quad per set nibble bit, light lip on subtiles with no soil directly above, damp darkening from the top of the occupied region (8 damp per pixel line -- the creeping front).
-- `_lifted_lines(v: int, n: int) -> int` - Waterline lift over the tile's own soil subtiles: a squeezed pool reads higher on the fill. v = raw lines (units >> 4), n = soil nibble; returns the drawn line count, clamped to 15.
-- `_draw_water(x: int, y: int, px: int, py: int, n: int) -> void` - Draw one tile's liquids (the gases drew first, top-down; liquids render over gas by ruling): waterfall streaks replace the fill; a tile covered by liquid above fills its full height stacked by share; the surface tile fills by the subtile-lifted line count, stacked densest from the bottom, crest on the topmost material.
-- `bind_sand(p_sand: GridSand) -> void` - Bind the solid field for its flow export; scenes without one skip the arrows.
-- `_majority(i: int) -> int` - Majority liquid at tile i -- the streak color's proxy (ties and empties read as water).
-- `_draw_gas(x: int, y: int, px: int, py: int) -> void` - Gases draw top-down, eight units per line: checker dither from the tile's top to a full tile at 128, then one solid line per further eight (ceil) until the tile reads fully solid at 255 -- half liquid density, sub-eight films draw nothing. Amount and ratio are separate reads: the row count comes from the tile's TOTAL gas, and the rows split across the gases by share, lightest band on top (the liquid stack partition, mirrored).
-- `_liquid_total(i: int) -> int` - Liquid units at tile i -- the pool minus the two gases; lines, crests, and the covered check all read this, never pool_total.
-- `_draw_fire(x: int, y: int, px: int, py: int) -> void` - Fire bits draw as 8x8 ember quads on the fuel tile plus dancing licks -- one per bit, in the bottom subtile row of the non-solid tile above, hash-keyed on (tile, tick, bit) so every flame tongues on its own phase; never the sim PRNG (world §1). The lick is pure render: flame is picture, air is rules.
-
-## res://scripts/global/palette.gd
-
-Every color the project draws with, collected in one class of constants.
-Day-one discipline (world.md §9): cold blue-gray base, water blues, and — since
-the fire lab — the warm bank: wood tans, gases, the fire cycle. Swap for DB16 when real art starts.
-
 
 ## res://scripts/testing/run_all.gd
 
