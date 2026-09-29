@@ -261,7 +261,7 @@ One CA domain (world.md §8): the engine sextet around one packet --
 debug furniture and the bridge run at the tick head -- plus the ruling, the per-room PRNG, and
 the snapshot/restore machinery. Unobserved rooms are never ticked.
 
-- `_init(p_w: int, p_h: int, p_seed: int) -> void` - Construct the quintet (idle engines are nearly free) and seed the room PRNG -- advanced only inside ticks, never from the frame.
+- `_init(p_w: int, p_h: int, p_seed: int) -> void` - Construct the sextet (idle engines are nearly free) and seed the room PRNG -- advanced only inside ticks, never from the frame.
 - `tick() -> void` - One simulation tick in the engine ruling: the bridge at the head (actor exchanges, world.md §4), solids, liquids, reactions last.
 - `snapshot() -> RoomState` - Copy the persistent census: fifteen packet columns, the ignition overlay, both sweep-parity counters.
 - `restore(s: RoomState) -> void` - Write the census back, rebuild the maintained caches, end on the packet assert -- restore is sound outside the tick, not just before the next one.

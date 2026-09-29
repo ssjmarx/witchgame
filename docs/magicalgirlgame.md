@@ -79,7 +79,7 @@ Inherited from world §3 in full; `element_tick()` unchanged; GridWater authorit
 
 ## 4. Rendering
 
-Inherited from world §9: the room-sized Image at 10 Hz, the 8×4 bank, 2-bit grayscale baked through the Palette module, rows-are-conditions, Bayer dither, derived animation.
+Inherited from world §9: the room-sized Image at 10 Hz, the palette law (DB16 master plus documented guests; tile banks at most four, sprite banks at most three plus transparency — machine-checked), the ambiance layer, derived animation.
 
 Same bank, this game's semantic loads:
 
@@ -239,7 +239,7 @@ The strip: one RoomSpec, 112×15, continuous scroll. Rhythm per reach — arriva
 
 ## 10. Placeholder art & audio
 
-- Palette discipline from day one: the 8×4 bank, not arbitrary sets
+- Palette discipline is law now (world §9): DB16 master plus documented guests; tile banks at most four, sprite banks at most three
 - Her: 16×32 silhouette — hair wedge, dress, skirt triangle, two violet eye pixels; 90% shape. The halo, the auras, and her indoor glow are the only magic renders
 - Enemies: circle/square placeholders encode mode; pips are three dots; the trail is the cargo manifest
 - SFX: jsfxr — whip crack, snatch pitch-drop, impact thuds (Pass = deep), pip tick descending, stun stars, pocket chime, prize pop, steam hiss, the bow's three sleepy notes

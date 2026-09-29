@@ -15,7 +15,7 @@ var bridge: ActorBridge
 var debug: GridDebug
 var rng := RandomNumberGenerator.new()
 
-## Construct the quintet (idle engines are nearly free) and seed the room PRNG -- advanced only inside ticks, never from the frame.
+## Construct the sextet (idle engines are nearly free) and seed the room PRNG -- advanced only inside ticks, never from the frame.
 func _init(p_w: int, p_h: int, p_seed: int) -> void:
 	width = p_w
 	height = p_h

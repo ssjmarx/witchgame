@@ -1,12 +1,18 @@
-# WITCH DEMO — Vertical Slice GDD v3.1
+# WITCH DEMO — Vertical Slice GDD v3.2
 
-*Delta doc on `world.md` v1.6. Sibling of `magicalgirlgame.md` v2.1 and `amazongame.md` v1.0. The engine — room model, CA, bridge, actor shell, contact contract, lasso core, doors, pockets, death and lives machinery, rendering, light rig, level format — is inherited from there. This doc owns her verbs, her rooms, her policy, and her roster. Where this doc and `world.md` disagree about engine behavior, `world.md` wins.*
+*Delta doc on `world.md` v1.7. Sibling of `magicalgirlgame.md` v2.1 and `amazongame.md` v1.0. The engine — room model, CA, bridge, actor shell, contact contract, lasso core, doors, pockets, death and lives machinery, rendering, light rig, level format — is inherited from there. This doc owns her verbs, her rooms, her policy, and her roster. Where this doc and `world.md` disagree about engine behavior, `world.md` wins.*
 
 **Goal:** one contiguous dungeon of seven chambers where every verb, element, container, and enemy behavior is operational with placeholder art. If this slice is fun with gray boxes, the game exists.
 
 **Pitch:** a Game Boy Color–styled puzzle platformer. (Internal touchstones live outside the pitch.)
 
 **Inheritance map:** §1 tech (world §1) · §2 data (world §2) · §3 sim (world §3) · §4 rendering (world §9) · lasso core (world §7) · enemy frame (world §6) · doors/death/lives (world §8) · smolder (world §4.4) · thermal exchanges (world §4.2).
+
+**Changelog v3.2 — the editor lab: her dungeons get their dark (world v1.7)**
+
+- **The palette law is code** (world §9): DB16 master plus documented guests, tile banks at most four and sprite banks at most three, index 0 darkest — her placeholder bank (`SPRITE_WITCH`) is in it. The v3.1 "palette bake stays pending" addendum is half-superseded: the *law* shipped; her sheet's re-quantization stays pending
+- **Her dungeon sets are code**: four ambience banks — whisper blue, brick crypt, moss grotto, sandstone catacomb — recolor the same cave backdrop; a backdrop's identity is (room seed, set), so every chamber of her map can carry its own dark deterministically
+- **The room editor is her map's seed** (`test_editor.tscn`): four persistent rooms, paint over tiles and debug furniture (water sources, drains, steam vents, open air), an inspector card, a witch chorus sharing one input — her seven chambers author into this, and the save bytes are the level format's first real artifact (world §10)
 
 **Changelog v3.1 — the bridge lab lands her substrate (world v1.6)**
 
@@ -75,13 +81,13 @@ Inherited from world §3 in full. `element_tick()` unchanged; GridWater authorit
 
 ## 4. Rendering
 
-Inherited from world §9: the room-sized Image at 10 Hz, the 8×4 bank, 2-bit grayscale baked through the Palette module, rows-are-conditions, Bayer dither, derived animation, twinkling dotted previews.
+Inherited from world §9: the room-sized Image at 10 Hz, the palette law (DB16 master plus documented guests; tile banks at most four, sprite banks at most three plus transparency — machine-checked), the ambiance layer (background module plus sealed-stencil dither; identity (seed, set)), derived animation, twinkling dotted previews.
 
-Her loads on the shared bank:
+Her loads on the shared banks (P-names are her semantic slot labels, pending her art):
 
-- **P0 witch** — eyes: two 1×2 red pixels, exempt row, canvas layer above the CanvasModulate. Cartoon law
-- **P1 warm** — fire, embers, the lantern's tint. Her hit-flash swaps to this row — the shared panic/fire clock made visible
-- **P6 stationery** — chalk arrows, paper tags; her handwriting, one row
+- **P0 witch** — eyes: two 1×2 red pixels, exempt from the banks, canvas layer above the CanvasModulate. Cartoon law
+- **P1 warm** — fire, embers, the lantern's tint. Her hit-flash swaps to this bank — the shared panic/fire clock made visible
+- **P6 stationery** — chalk arrows, paper tags; her handwriting, one bank
 - **P7 accent** — secrets, plumb target, throw previews
 
 Her state reads, no meters anywhere:
@@ -245,7 +251,7 @@ One `LevelSpec`, seven `RoomSpec`s. No pockets authored in the demo — bottomle
 
 ## 11. Placeholder art & audio
 
-- Palette discipline from day one: the 8×4 bank, not arbitrary 16-color sets
+- Palette discipline is law now (world §9, v1.7): the DB16 master plus documented guests; tile banks at most four, sprite banks at most three — PT0–PT3 machine-check it
 - Witch: 16×32 dark silhouette — triangle hat, robe wedge, two red eye pixels; she is 90% shape
 - Enemies: colored blobs with distinct silhouettes; circle/square placeholders encode mode; pots are simple cylinders, contents visible as a fill band
 - SFX: jsfxr for everything — whip, snatch pitch-drop, crackle, hiss, the smolder's sound, the pot's shatter

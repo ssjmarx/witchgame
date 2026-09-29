@@ -82,7 +82,7 @@ Inherited from world §3 in full; `element_tick()` unchanged; GridWater authorit
 
 ## 4. Rendering
 
-Inherited from world §9: the room-sized Image at 10 Hz, the 8×4 bank, 2-bit grayscale, rows-are-conditions, Bayer dither, derived animation.
+Inherited from world §9: the room-sized Image at 10 Hz, the palette law (DB16 master plus documented guests; tile banks at most four, sprite banks at most three plus transparency — machine-checked), the ambiance layer, derived animation.
 
 Our loads on the shared bank:
 
@@ -270,7 +270,7 @@ Crossover stock (Shellback, Cobble, Turtle, Slime, Woodpecker, Wisp, Breeze, Eel
 
 ## 12. Placeholder art & audio
 
-- Palette discipline from day one: the 8×4 bank, no arbitrary sets
+- Palette discipline is law now (world §9): DB16 master plus documented guests; tile banks at most four, sprite banks at most three
 - Her: 16×32 — blonde wedge, dress triangle, gold-scale rows, **the shield disc on her back** (the silhouette giveaway); two blue eye pixels. The torch flame, the auras, the plume are the only magic-adjacent renders, and two of those are just fire
 - Enemies: circle/square placeholders encode mode; pip dots always; the panicked row trembles
 - SFX: jsfxr — sword shing, the yank's whip-crack, the rout squeal, drop pops, jar shatter, torch whoosh, the gust, the lion's roar, the Taking's sting, and one chord for every snap-back-to-senses

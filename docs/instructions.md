@@ -42,13 +42,13 @@ Update the bank (`docs/`):
 ## 6. House comment style and the docstring linter
 
 Every `.gd` file in the project is audited by **`build_project_map.py`** (repo
-root) against a strict comment house style. On a clean pass it writes
+root) against a strict comment house style plus the palette law. On a clean pass it writes
 `docs/PROJECT_MAP.md`; on any violation it writes nothing and reports every
 issue. Since comments in `scripts/` are the only code you may touch (§2), every
 comment or docstring you write **must conform — re-run the audit after every
 comment edit.**
 
-### The three enforced rules
+### The four enforced rules
 
 1. **File header.** Every `.gd` file begins with exactly **3 consecutive `##`
    lines**: a compact, information-dense description of the file's purpose.
@@ -76,6 +76,11 @@ comment edit.**
        var avail := 0
        # one comment line at a time, however long it needs to be
        take_pool(idx(s, yy2), W, remaining)
+
+4. **Palette literals.** The only home for a `Color(...)` constructor is
+   `scripts/render/palette.gd`. Every other `.gd` file — except under
+   `scripts/testing/` — fails the audit with a palette-law violation:
+   shipped colors are `Palette` constants, never literals.
 
 ### Conventions that pass the audit (and should be kept)
 
