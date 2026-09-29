@@ -12,13 +12,14 @@ const BOTTOM_MASK := GridSand.BL | GridSand.BR  # the two lower subtile slots
 const TOP_MASK := GridSand.TL | GridSand.TR      # the two upper subtile slots
 const LIQ_DRAW: Array[int] = [TilePacket.Mat.LAVA, TilePacket.Mat.ACID, TilePacket.Mat.WATER, TilePacket.Mat.OIL]   # liquids stack from the bottom, densest first
 const GAS_DRAW: Array[int] = [TilePacket.Mat.SMOKE, TilePacket.Mat.STEAM]   # density order; the band split walks it reversed -- the lightest gas takes the topmost rows
-const MAT_COLORS: Array = [Palette.WATER, Palette.OIL, Palette.WATER, Palette.WATER, Palette.SMOKE, Palette.STEAM]   # indexed by Mat; acid/lava still alias water until their labs; the gases carry their own rows since the fire lab
-const MAT_SURFACE: Array[Color] = [Palette.WATER_SURFACE, Palette.OIL_SURFACE, Palette.WATER_SURFACE, Palette.WATER_SURFACE, Palette.SMOKE_SURFACE, Palette.STEAM_SURFACE]
+const MAT_COLORS: Array[Color] = [Palette.BANK_WATER[1], Palette.BANK_OIL[1], Palette.BANK_ACID[1], Palette.BANK_LAVA[2], Palette.BANK_SMOKE[0], Palette.BANK_STEAM[0]]
+const MAT_SURFACE: Array[Color] = [Palette.BANK_WATER[2], Palette.BANK_OIL[2], Palette.BANK_ACID[2], Palette.BANK_LAVA[3], Palette.BANK_SMOKE[1], Palette.BANK_STEAM[1]]
 
 # the sim state this renderer draws
 var stone: GridStone
 var water: GridWater
 var sand: GridSand = null   # optional: bound by scenes that own a solid field
+var fx: CaFx                 # the second painter: ambiance under, effects over (world §9)
 
 # the picture: one map-sized image pushed through a texture
 var image: Image
@@ -27,23 +28,27 @@ var texture: ImageTexture
 # overlays
 var debug := false          # G: air pockets + grid
 var hover := Vector2i(-1, -1)
+var furniture := false       # editor: draw debug-tile glyphs without the full G overlay
 
-## Bind the sim pair and create the map-sized image and texture.
-func _init(terrain: GridStone, field: GridWater) -> void:
+## Bind the sim pair, the room's seed for the FX domain, and create the map-sized image and texture.
+func _init(terrain: GridStone, field: GridWater, p_seed := 0) -> void:
 	stone = terrain
 	water = field
-	# Godot 4.3+: swap for Image.create_empty(...) if the deprecation note bothers you
+	fx = CaFx.new(terrain, field, p_seed)
 	image = Image.create(terrain.width * TILE, terrain.height * TILE, false, Image.FORMAT_RGBA8)
 	texture = ImageTexture.create_from_image(image)
 
-## Repaint every tile plus overlays into the texture; call once per tick.
+## Repaint the ambiance, every tile, the FX over-pass, and overlays
 func redraw() -> void:
-	image.fill(Palette.BG)
+	fx.under(image)
 	for y in stone.height:
 		for x in stone.width:
 			_draw_tile(x, y)
+	fx.over(image)
 	if debug:
 		_draw_debug()
+	if debug or furniture:
+		_draw_furniture()
 	if hover.x >= 0 and hover.y >= 0:
 		_draw_cursor()
 	texture.update(image)
@@ -55,8 +60,8 @@ func _draw_tile(x: int, y: int) -> void:
 	var i := stone.idx(x, y)
 	if stone.is_solid(x, y):
 		var wood := stone.packet.get_terrain(i) == TilePacket.T.WOOD
-		var fill := Palette.WOOD if wood else Palette.STONE
-		var dark := Palette.WOOD_DARK if wood else Palette.STONE_DARK
+		var fill := Palette.BANK_WOOD[1] if wood else Palette.BANK_STONE[1]
+		var dark := Palette.BANK_WOOD[0] if wood else Palette.BANK_STONE[0]
 		image.fill_rect(Rect2i(px, py, TILE, TILE), fill)
 		image.fill_rect(Rect2i(px, py, TILE, 1), dark)
 		image.fill_rect(Rect2i(px, py, 1, TILE), dark)
@@ -79,7 +84,7 @@ func _draw_debug() -> void:
 	for y in stone.height:
 		for x in stone.width:
 			if water.is_air_passable(x, y):
-				var c := Palette.DBG_SEALED if water.is_air_sealed(x, y) else Palette.DBG_OPEN
+				var c := Palette.DEBUG_SEALED if water.is_air_sealed(x, y) else Palette.DEBUG_OPEN
 				image.fill_rect(Rect2i(x * TILE, y * TILE, TILE, TILE), c)
 	
 	# level lines: one per contiguous water segment per column
@@ -91,7 +96,7 @@ func _draw_debug() -> void:
 				while t > 0 and water.get_water(x, t - 1) >= GridWater.LINE:
 					t -= 1
 				var lines := water.get_water(x, t) >> 4
-				image.fill_rect(Rect2i(x * TILE, t * TILE + TILE - lines, TILE, 1), Palette.LEVEL_DBG)
+				image.fill_rect(Rect2i(x * TILE, t * TILE + TILE - lines, TILE, 1), Palette.DEBUG_LEVEL)
 				while y < stone.height and water.get_water(x, y) >= GridWater.LINE:
 					y += 1
 			else:
@@ -108,7 +113,7 @@ func _draw_debug() -> void:
 			var cy := y * TILE + (TILE >> 1)
 			var ln := clampi(2 + (mag >> 6), 2, 6)
 			for s in ln + 1:
-				image.set_pixel(cx + GridWater.FLOW_DX[d] * s, cy + GridWater.FLOW_DY[d] * s, Palette.FLOW_DBG)
+				image.set_pixel(cx + GridWater.FLOW_DX[d] * s, cy + GridWater.FLOW_DY[d] * s, Palette.DEBUG_FLOW)
 				
 	# solid flow arrows: subtile arrivals at 64 pool-units each, same style as water
 	if sand != null:
@@ -122,24 +127,24 @@ func _draw_debug() -> void:
 				var cy := y * TILE + (TILE >> 1)
 				var ln := clampi(2 + (mag >> 6), 2, 6)
 				for s in ln + 1:
-					image.set_pixel(cx + GridWater.FLOW_DX[d] * s, cy + GridWater.FLOW_DY[d] * s, Palette.SOIL_FLOW_DBG)
+					image.set_pixel(cx + GridWater.FLOW_DX[d] * s, cy + GridWater.FLOW_DY[d] * s, Palette.DEBUG_SOIL_FLOW)
 	
 	# the tile grid
 	var wpx := stone.width * TILE
 	var hpx := stone.height * TILE
 	for x in range(0, wpx, TILE):
-		image.fill_rect(Rect2i(x, 0, 1, hpx), Palette.GRID)
+		image.fill_rect(Rect2i(x, 0, 1, hpx), Palette.DEBUG_GRID)
 	for y in range(0, hpx, TILE):
-		image.fill_rect(Rect2i(0, y, wpx, 1), Palette.GRID)
+		image.fill_rect(Rect2i(0, y, wpx, 1), Palette.DEBUG_GRID)
 
 ## Draw the hover cursor as a tile outline.
 func _draw_cursor() -> void:
 	var px := hover.x * TILE
 	var py := hover.y * TILE
-	image.fill_rect(Rect2i(px, py, TILE, 1), Palette.CURSOR)
-	image.fill_rect(Rect2i(px, py + TILE - 1, TILE, 1), Palette.CURSOR)
-	image.fill_rect(Rect2i(px, py, 1, TILE), Palette.CURSOR)
-	image.fill_rect(Rect2i(px + TILE - 1, py, 1, TILE), Palette.CURSOR)
+	image.fill_rect(Rect2i(px, py, TILE, 1), Palette.DEBUG_CURSOR)
+	image.fill_rect(Rect2i(px, py + TILE - 1, TILE, 1), Palette.DEBUG_CURSOR)
+	image.fill_rect(Rect2i(px, py, 1, TILE), Palette.DEBUG_CURSOR)
+	image.fill_rect(Rect2i(px + TILE - 1, py, 1, TILE), Palette.DEBUG_CURSOR)
 
 ## Waterfall streaks: downward flow at mag >= FLOW_STREAK with dir DOWN draws hashed vertical streaks keyed on (tile, tick_count) — hash-based, never the sim PRNG (world §1). Returns true when streaks were drawn; the caller then draws no fill or crest -- falling water is streaks, not pooled lines.
 func _draw_flow(x: int, y: int, px: int, py: int) -> bool:
@@ -165,7 +170,7 @@ func _draw_soil(x: int, y: int, px: int, py: int, n: int) -> void:
 	for c in SUB_QUADS:
 		if (n & c[0]) == 0:
 			continue
-		image.fill_rect(Rect2i(px + c[1], py + c[2], 8, 8), Palette.SOIL)
+		image.fill_rect(Rect2i(px + c[1], py + c[2], 8, 8), Palette.BANK_SOIL[1])
 		var covered := false
 		if c[0] == GridSand.BL:
 			covered = (n & GridSand.TL) != 0
@@ -175,7 +180,7 @@ func _draw_soil(x: int, y: int, px: int, py: int, n: int) -> void:
 			var want := GridSand.BL if c[0] == GridSand.TL else GridSand.BR
 			covered = (n_up & want) != 0
 		if not covered:
-			image.fill_rect(Rect2i(px + c[1], py + c[2], 8, 1), Palette.SOIL_LIP)
+			image.fill_rect(Rect2i(px + c[1], py + c[2], 8, 1), Palette.BANK_SOIL[2])
 	var d := stone.packet.get_damp(stone.idx(x, y))
 	if d > 0:
 		# lines from the top of the occupied region: a bottom-only tile darkens from its own top, so shallow stacks still show a level
@@ -187,7 +192,7 @@ func _draw_soil(x: int, y: int, px: int, py: int, n: int) -> void:
 			var y0 := maxi(py + c[2], band_top)
 			var y1 := mini(py + c[2] + 8, band_bot)
 			if y1 > y0:
-				image.fill_rect(Rect2i(px + c[1], y0, 8, y1 - y0), Palette.SOIL_WET)
+				image.fill_rect(Rect2i(px + c[1], y0, 8, y1 - y0), Palette.BANK_SOIL[0])
 
 ## Waterline lift over the tile's own soil subtiles: a squeezed pool reads higher on the fill. v = raw lines (units >> 4), n = soil nibble; returns the drawn line count, clamped to 15.
 func _lifted_lines(v: int, n: int) -> int:
@@ -303,12 +308,44 @@ func _draw_fire(x: int, y: int, px: int, py: int) -> void:
 			continue
 		var hsh := (x * 92837111 + y * 689287499 + water.tick_count * 283923481 + b * 40503) & 0x7FFFFFFF
 		var frame := hsh % 3
-		var col := Palette.FIRE_1 if frame == 0 else (Palette.FIRE_2 if frame == 1 else Palette.FIRE_3)
+		var col := Palette.BANK_FIRE[1] if frame == 0 else (Palette.BANK_FIRE[2] if frame == 1 else Palette.BANK_FIRE[3])
 		image.fill_rect(Rect2i(px + c[1], py + c[2], 8, 8), col)
 		if lick_ok:
 			var tx: int = px + c[1] + 2 + ((hsh >> 8) % 4)
 			var th := 5 + ((hsh >> 16) % 4)
-			image.fill_rect(Rect2i(px + c[1], lick_y, 8, 8), Palette.FIRE_1)
-			image.fill_rect(Rect2i(tx, lick_y + 8 - th, 2, th), Palette.FIRE_2)
-			image.set_pixel(tx, lick_y + 8 - th, Palette.FIRE_3)
+			image.fill_rect(Rect2i(px + c[1], lick_y, 8, 8), Palette.BANK_FIRE[1])
+			image.fill_rect(Rect2i(tx, lick_y + 8 - th, 2, th), Palette.BANK_FIRE[2])
+			image.set_pixel(tx, lick_y + 8 - th, Palette.BANK_FIRE[3])
 		b += 1
+
+## Debug furniture glyphs: source spout, drain grate, steam vent, and the open-air brackets -- author furniture, drawn over everything, never part of the world picture (finished rooms keep furniture outside the play area).
+func _draw_furniture() -> void:
+	for y in stone.height:
+		for x in stone.width:
+			var d := stone.packet.get_debug(stone.idx(x, y))
+			if d == TilePacket.DebugTile.NONE:
+				continue
+			var px := x * TILE
+			var py := y * TILE
+			match d:
+				TilePacket.DebugTile.WATER_SOURCE:
+					image.fill_rect(Rect2i(px + 2, py + 1, 12, 2), Palette.BANK_WATER[0])
+					for k in 3:
+						image.fill_rect(Rect2i(px + 3 + k * 4, py + 5 + (k % 2) * 2, 2, 3), Palette.BANK_WATER[2])
+				TilePacket.DebugTile.DRAIN:
+					for k in 3:
+						image.fill_rect(Rect2i(px + 2, py + 5 + k * 3, 12, 1), Palette.BANK_WATER[0])
+				TilePacket.DebugTile.STEAM_VENT:
+					image.fill_rect(Rect2i(px + 2, py + 13, 12, 2), Palette.BANK_STEAM[0])
+					for k in 3:
+						image.fill_rect(Rect2i(px + 4 + k * 4, py + 8 - (k % 2) * 2, 2, 3), Palette.BANK_STEAM[1])
+				TilePacket.DebugTile.OPEN_AIR:
+					var c := Palette.DEBUG_LEVEL
+					image.fill_rect(Rect2i(px + 3, py + 3, 3, 1), c)
+					image.fill_rect(Rect2i(px + 3, py + 4, 1, 2), c)
+					image.fill_rect(Rect2i(px + 10, py + 3, 3, 1), c)
+					image.fill_rect(Rect2i(px + 12, py + 4, 1, 2), c)
+					image.fill_rect(Rect2i(px + 3, py + 12, 3, 1), c)
+					image.fill_rect(Rect2i(px + 3, py + 10, 1, 2), c)
+					image.fill_rect(Rect2i(px + 10, py + 12, 3, 1), c)
+					image.fill_rect(Rect2i(px + 12, py + 10, 1, 2), c)

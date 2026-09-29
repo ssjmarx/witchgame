@@ -11,6 +11,8 @@ const SUITES: Array[String] = [
 	"res://scripts/testing/test_fire.gd",
 	"res://scripts/testing/test_bridge.gd",
 	"res://scripts/testing/test_rooms.gd",
+	"res://scripts/testing/test_palette.gd",
+	"res://scripts/testing/test_debug.gd",
 ]
 
 ## One pass over the registry: fresh instance, suite, tally, free -- nodes outside the tree are not auto-freed (RefCounted engines are; the launcher is not).

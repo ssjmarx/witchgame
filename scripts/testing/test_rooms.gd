@@ -19,7 +19,7 @@ var observed := 0
 ## Build room B with its renderer and sprite beside the sandbox's room A, then load the first preset -- the baseline is taken after the carve, before any tick.
 func _setup() -> void:
 	room_b = Room.new(GRID_W, GRID_H, ROOM_B_SEED)
-	renderer_b = ElementRenderer.new(room_b.stone, room_b.water)
+	renderer_b = ElementRenderer.new(room_b.stone, room_b.water, ROOM_B_SEED)
 	sprite_b = Sprite2D.new()
 	sprite_b.centered = false
 	sprite_b.texture = renderer_b.texture

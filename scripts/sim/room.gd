@@ -1,5 +1,5 @@
-## One CA domain (world.md §8): the engine quintet around one packet -- the
-## bridge runs at the tick head -- plus the ruling, the per-room PRNG, and
+## One CA domain (world.md §8): the engine sextet around one packet -- 
+## debug furniture and the bridge run at the tick head -- plus the ruling, the per-room PRNG, and
 ## the snapshot/restore machinery. Unobserved rooms are never ticked.
 
 class_name Room
@@ -12,6 +12,7 @@ var water: GridWater
 var sand: GridSand
 var react: GridReactions
 var bridge: ActorBridge
+var debug: GridDebug
 var rng := RandomNumberGenerator.new()
 
 ## Construct the quintet (idle engines are nearly free) and seed the room PRNG -- advanced only inside ticks, never from the frame.
@@ -23,16 +24,18 @@ func _init(p_w: int, p_h: int, p_seed: int) -> void:
 	water = GridWater.new(p_w, p_h, stone)
 	sand = GridSand.new(p_w, p_h, stone, water)
 	react = GridReactions.new(p_w, p_h, stone)
-	bridge = ActorBridge.new(p_w, p_h, stone, rng)
+	debug = GridDebug.new(p_w, p_h, stone, water)
+	bridge = ActorBridge.new(p_w, p_h, stone, rng, water.flow)
 
 ## One simulation tick in the engine ruling: the bridge at the head (actor exchanges, world.md §4), solids, liquids, reactions last.
 func tick() -> void:
+	debug.tick()
 	bridge.tick()
 	sand.tick()
 	water.tick()
 	react.tick()
 
-## Copy the persistent census: fourteen packet columns, the ignition overlay, both sweep-parity counters.
+## Copy the persistent census: fifteen packet columns, the ignition overlay, both sweep-parity counters.
 func snapshot() -> RoomState:
 	var s := RoomState.new()
 	var pk := stone.packet
@@ -66,5 +69,6 @@ func reset() -> void:
 	pk.clear_damp()
 	pk.clear_fuel()
 	pk.clear_fire()
+	pk.clear_debug()
 	react.clear()
 	pk.assert_all()

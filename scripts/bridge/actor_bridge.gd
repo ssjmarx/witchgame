@@ -23,14 +23,16 @@ var width: int
 var height: int
 var rng: RandomNumberGenerator
 var bodies: Array[ThermalBody] = []
+var flow: WaterFlow
 
-## Bind the packet via the stone facade and the room PRNG -- every roll happens inside the tick, never on the frame.
-func _init(w: int, h: int, terrain: GridStone, p_rng: RandomNumberGenerator) -> void:
+## Bind the packet via the stone facade and the room PRNG every roll happens inside the tick, never on the frame
+func _init(w: int, h: int, terrain: GridStone, p_rng: RandomNumberGenerator, p_flow: WaterFlow) -> void:
 	width = w
 	height = h
 	stone = terrain
 	pk = terrain.packet
 	rng = p_rng
+	flow = p_flow
 
 ## Add a body to the registry; the scene owns it and the room census never carries it.
 func register(body: ThermalBody) -> void:
@@ -259,6 +261,8 @@ func _pour_into(src: int, dst: int, left: int) -> int:
 		var taken := pk.take_pool(src, m, want)
 		var got := pk.add_pool(dst, m, taken)
 		left -= got
+		if got > 0:
+			flow.stamp(dst, _dir_between(src, dst), got)   # the pour is the event: every landing stamps the export -- the splash's arrival record
 		if got < taken:
 			pk.add_pool(src, m, taken - got)   # guard: the take never exceeds the destination's room
 			return left
@@ -278,3 +282,14 @@ func _eject_up(src: int, x: int, y: int, left: int) -> int:
 ## One overlapped tile index, PRNG-picked -- the two-tile heroine law (world.md §2): the single draw site every thermal operation shares, one sample per tick.
 func _pick_index(b: ThermalBody) -> int:
 	return rng.randi_range(0, b.tiles.size() - 1)
+
+## The FlowDir code for a step from src to dst (adjacent or diagonal, clamped): entry pours, wakes, and the eject climb all land here; NONE for anything the enum cannot name.
+@warning_ignore("integer_division")
+func _dir_between(src: int, dst: int) -> int:
+	var dx := clampi((dst % width) - (src % width), -1, 1)
+	@warning_ignore("integer_division")
+	var dy := clampi((dst / width) - (src / width), -1, 1)
+	for k in range(1, GridWater.FLOW_DX.size()):
+		if GridWater.FLOW_DX[k] == dx and GridWater.FLOW_DY[k] == dy:
+			return k
+	return GridWater.FlowDir.NONE

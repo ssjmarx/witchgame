@@ -20,6 +20,9 @@ const MAT_COUNT := 6
 enum Led { WATER, OIL, ACID, LAVA, SMOKE, STEAM, STONE_S, SOIL_S, ICE_S, DAMP, FUEL }
 const LED_COUNT := 11
 
+## Debug furniture (the editor lab, world.md §3): sources and sinks as room markers -- live during play, authored outside the play area in finished rooms.
+enum DebugTile { NONE, WATER_SOURCE, DRAIN, STEAM_VENT, OPEN_AIR }
+
 # -- Tuning tables -----------------------------------------------------------
 
 ## Higher density sinks lower. Rest stack top->bottom:
@@ -78,11 +81,13 @@ var damp := PackedByteArray()
 var tags := PackedByteArray()
 var fuel := PackedByteArray()    # burnable energy attached to solids -- outside the pool, own ledger row
 var fire_s := PackedByteArray()  # fire subtile bits -- overlay state: unbooked, displaces nothing
+var debug_s := PackedByteArray()  # debug furniture markers -- overlay state: unbooked, census column fifteen (the editor lab)
 var actor_s := PackedByteArray()
 
 var _booked := PackedInt64Array()   # ledger: booked totals, one per row
 var _present := PackedInt32Array()   # per material: count of tiles holding nonzero units -- the absent-pass gate
 var _fire_present := 0   # tiles holding fire bits -- has_fire()'s gate (set_fire keeps it honest)
+var _debug_present := 0   # tiles carrying furniture -- has_debug()'s gate (set_debug keeps it honest)
 
 ## Allocate the w×h grid: every column resized, ledger zeroed.
 func _init(p_w: int, p_h: int) -> void:
@@ -106,6 +111,7 @@ func _init(p_w: int, p_h: int) -> void:
 	tags.resize(n)
 	fuel.resize(n)
 	fire_s.resize(n)
+	debug_s.resize(n)
 	actor_s.resize(n)
 	clear()
 
@@ -127,6 +133,7 @@ func clear() -> void:
 	tags.fill(0)
 	fuel.fill(0)
 	fire_s.fill(0)
+	debug_s.fill(0)
 	actor_s.fill(0)
 	_fire_present = 0
 
@@ -547,8 +554,8 @@ func clear_fire() -> void:
 
 # -- Snapshot census (world.md §8) ------------------------------------------
 
-## The persistent column count -- the snapshot census: terrain, three subtile nibbles, six pool, damp, tags, fuel, fire bits.
-const COL_COUNT := 14
+## The persistent column count -- the snapshot census: terrain, three subtile nibbles, six pool, damp, tags, fuel, fire bits, debug furniture.
+const COL_COUNT := 15
 
 ## Live reference to persistent column i, census order (0..COL_COUNT-1) -- duplicate before storing it anywhere: packed arrays are references.
 func column(i: int) -> PackedByteArray:
@@ -566,7 +573,8 @@ func column(i: int) -> PackedByteArray:
 		10: return damp
 		11: return tags
 		12: return fuel
-		_: return fire_s
+		13: return fire_s
+		_: return debug_s
 
 ## Point persistent column i at bytes (restore path); the write bypasses books, present counts, and fire_present -- the caller rebuilds them.
 func load_column(i: int, b: PackedByteArray) -> void:
@@ -584,7 +592,8 @@ func load_column(i: int, b: PackedByteArray) -> void:
 		10: damp = b
 		11: tags = b
 		12: fuel = b
-		_: fire_s = b
+		13: fire_s = b
+		_: debug_s = b
 
 ## Recompute every booked row from fresh recounts -- the restore path's ledger rebuild; green asserts prove maintained == recounted, so this arrives consistent.
 func rebuild_books() -> void:
@@ -607,3 +616,34 @@ func rebuild_present() -> void:
 	for i in w * h:
 		if fire_s[i] != 0:
 			_fire_present += 1
+	_debug_present = 0
+	for i in w * h:
+		if debug_s[i] != 0:
+			_debug_present += 1
+
+# -- Debug furniture ---------------------------------------------------------
+
+## Debug furniture at tile i (DebugTile code) -- overlay markers carried by the census: never matter, never booked.
+func get_debug(i: int) -> int:
+	return debug_s[i]
+
+## Set the furniture at tile i -- the editor's single writer, the set_fire pattern: keeps the present count honest, books nothing.
+func set_debug(i: int, v: int) -> void:
+	v = clampi(v, 0, DebugTile.OPEN_AIR)
+	var old := debug_s[i]
+	if old == v:
+		return
+	if old == DebugTile.NONE:
+		_debug_present += 1
+	elif v == DebugTile.NONE:
+		_debug_present -= 1
+	debug_s[i] = v
+
+## True when any tile carries furniture -- the debug engine's absent-pass gate (L1b's consumer, inert until then).
+func has_debug() -> bool:
+	return _debug_present > 0
+
+## Zero the furniture column. (Clear/reset path -- overlay state, nothing booked.)
+func clear_debug() -> void:
+	debug_s.fill(0)
+	_debug_present = 0

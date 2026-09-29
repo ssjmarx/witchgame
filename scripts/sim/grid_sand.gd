@@ -300,3 +300,5 @@ func _swap_move(sx: int, sy: int, tx: int, ty: int, kind: int) -> void:
 		return
 	var take := mini(shed, maxi(0, cap_src - pk.pool_total(src)))
 	pk.shift_pool(dst, src, m, take)
+	if take > 0:
+		water.flow_stamp(src, GridWater.FlowDir.UP, take)   # liquid arrivals ride the water export, never sand's

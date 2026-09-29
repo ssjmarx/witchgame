@@ -117,6 +117,7 @@ func _flood_region(start: int) -> void:
 		if i + width < width * height and _is_air_idx(i + width) and _region_of[i + width] == -1:
 			_region_of[i + width] = id
 			stack.push_back(i + width)
+	@warning_ignore("shadowed_variable")
 	var body_top := {}   # body id -> row of its highest cell touching us
 	for i in cells:
 		var x := i % width
@@ -131,6 +132,7 @@ func _flood_region(start: int) -> void:
 	_regions.append({ "body_top": body_top })
 
 ## Record a pocket cell's orthogonal neighbor as a body contact, keeping the highest row per body.
+@warning_ignore("shadowed_variable")
 func _note_contact(n: int, body_top: Dictionary) -> void:
 	if pk.pool_total(n) < GridWater.LINE:
 		return
@@ -153,7 +155,7 @@ func _compute_escape() -> void:
 				var i := pk.idx(x, y)
 				if _escape[i] or stone.is_solid(x, y):
 					continue
-				var ok := y == 0  # open sky above the map
+				var ok := y == 0 or (pk.get_debug(i) == TilePacket.DebugTile.OPEN_AIR and pk.pool_total(i) <= GridWater.AIR_PASSABLE_MAX)  # open sky, or a breathing open-air tile (a drowned vent stops venting)+
 				if not ok and _escape[i - width]:
 					ok = true  # rise through air, or bubble up through liquid
 				if not ok and y > 0 and stone.is_solid(x, y - 1):

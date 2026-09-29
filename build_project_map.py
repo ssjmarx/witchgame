@@ -37,6 +37,8 @@ SKIP_DIRS = {".godot", ".git"}
 FUNC_RE = re.compile(r"^(?:static\s+)?func\s+([A-Za-z_]\w*)\s*\(")
 CLASS_RE = re.compile(r"^class\s+([A-Za-z_]\w*)\b")
 
+PALETTE_FILE = "scripts/render/palette.gd"   # the only home for Color(...) literals
+PALETTE_LITERAL_RE = re.compile(r"\bColor\s*\(")
 
 @dataclass
 class FuncInfo:
@@ -100,6 +102,14 @@ def blank_multiline_strings(lines: list) -> list:
             out.append(line)
     return out
 
+def check_palette_literals(res_path: str, lines: list, issues: list) -> None:
+    """The palette law: no Color(...) constructor outside palette.gd and
+    scripts/testing/ -- shipped colors are Palette constants, never literals."""
+    if res_path == PALETTE_FILE or res_path.startswith("scripts/testing/"):
+        return
+    for n, line in enumerate(lines, 1):
+        if PALETTE_LITERAL_RE.search(code_only(line)):
+            issues.append(f"line {n}: Color(...) literal - colors live in {PALETTE_FILE} (the palette law)")
 
 # --- parsing ----------------------------------------------------------------
 
@@ -248,6 +258,7 @@ def parse_file(path: Path) -> FileInfo:
     info = FileInfo(res_path=path.relative_to(ROOT).as_posix())
     info.top_docstring = extract_top_docstring(lines, info.issues)
     info.funcs = extract_functions(lines, info.issues)
+    check_palette_literals(info.res_path, lines, info.issues)
     return info
 
 

@@ -34,7 +34,7 @@ func _ready() -> void:
 	room = Room.new(GRID_W, GRID_H, SANDBOX_SEED)
 	stone = room.stone
 	water = room.water
-	renderer = ElementRenderer.new(stone, water)
+	renderer = ElementRenderer.new(stone, water, SANDBOX_SEED)
 	sprite = Sprite2D.new()
 	sprite.centered = false
 	sprite.texture = renderer.texture
@@ -197,7 +197,7 @@ func _update_info(t: Vector2i) -> void:
 func _hint_header() -> String:
 	return ""
 
-## Override: the live readout for the hover tile.
+## Override: the live readout for the hover tile.  CURRENTLY DISABLED
 func _info_line(t: Vector2i) -> String:
 	var info := "PAUSED (T steps)" if paused else ""
 	if t.x >= 0:
@@ -206,7 +206,7 @@ func _info_line(t: Vector2i) -> String:
 		if info != "":
 			info += "   "
 		info += "tile %d,%d   water %3d   lines %2d   %s" % [t.x, t.y, w, w >> 4, bands[water.get_level(t.x, t.y)]]
-	return info
+	return ""
 
 ## No-op: redraws already ride the tick; keeps the signal wiring visible.
 func _on_levels_changed(_cells) -> void:
@@ -294,6 +294,7 @@ func run_tests() -> void:
 	pass
 
 ## One PASS/FAIL tally line -- the single verdict path every example lands on: empty err passes, anything else prints as the reason.
+@warning_ignore("shadowed_variable_base_class")
 func _record(name: String, err: String) -> void:
 	if err == "":
 		suite_pass += 1
@@ -303,5 +304,6 @@ func _record(name: String, err: String) -> void:
 	print("FAIL  %s -- %s" % [name, err])
 
 ## Run one example -- a Callable returning "" on success, the failure reason otherwise -- and record its verdict.
+@warning_ignore("shadowed_variable_base_class")
 func _example(name: String, fn: Callable) -> void:
 	_record(name, fn.call())

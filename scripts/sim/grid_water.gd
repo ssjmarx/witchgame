@@ -323,7 +323,7 @@ func _sort_pass() -> void:
 			for x in range(width - 1, -1, -1):
 				_sort_pair(idx(x, y))
 				
-## Try one trade across the vertical pair at tile u (upper): densest-above vs lightest-below, swapped when denser-above. One trade per pair per tick -- the pacing knob. Take-both-then-add-both, so a full tile's freed budget always covers the incoming units.
+## Try one trade across the vertical pair at tile u (upper): densest-above vs lightest-below, swapped when denser-above. One trade per pair per tick -- the pacing knob. Take-both-then-add-both, so a full tile's freed budget always covers the incoming units.  both arrivals stamp the flow export — render-only, ledger-blind
 func _sort_pair(u: int) -> void:
 	var d := u + width
 	var mu := -1
@@ -351,6 +351,8 @@ func _sort_pair(u: int) -> void:
 	pk.take_pool(d, ml, amt)
 	pk.add_pool(d, mu, amt)
 	pk.add_pool(u, ml, amt)
+	flow_stamp(d, FlowDir.DOWN, amt)   # the dense sinker lands below; the light riser lands above -- gas climbing through liquid exports UP (the bubble lab's pacing)
+	flow_stamp(u, FlowDir.UP, amt)
 
 ## Total pool content (all materials) at (x, y); 0 outside the grid.
 func get_total(x: int, y: int) -> int:
