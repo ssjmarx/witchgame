@@ -105,6 +105,7 @@ func _brush_soil(t: Vector2i) -> void:
 
 ## Track the hover tile; run held strokes; refresh the HUD.
 func _process(_delta: float) -> void:
+	renderer.frame()
 	var t := _hover_tile()
 	var dirty := t != renderer.hover
 	renderer.hover = t

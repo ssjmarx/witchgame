@@ -13,6 +13,7 @@ func run_tests() -> void:
 	_example("DT2  the drain empties the bowl to its films", _dt2_drain)
 	_example("DT3  open air eats the gases", _dt3_open_air)
 	_example("DT4  the inverted cup: sealed holds its breath, vented drinks, then drowns its breather", _dt4_cup)
+	_example("DT5  the rain column is not seek's donor", _dt5_rain_not_donor)
 	print("== done ==")
 
 ## DT0: painted furniture, fifty ticks, restore -- the DEBUG_S column returns byte-exact with the census (RT1's proof, furniture edition).
@@ -119,4 +120,29 @@ func _dt4_cup() -> String:
 		return "the vented room never settled"
 	if not pk_c.assert_all() or not pk_v.assert_all():
 		return "a ledger went red"
+	return ""
+
+## DT4: the rain column is not seek's donor -- a source over a 3-wide basin doses 16/tick down the column, and seek levels only the standing surfaces: the column runs gapless from source to floor, and the ledger holds the dose exactly (the teleport ate the stack from the top, mid-air.
+func _dt5_rain_not_donor() -> String:
+	var r := Room.new(GRID_W, GRID_H, 31)
+	var pk := r.stone.packet
+	# the basin: a 3-wide stone U, three deep, open sky above; the source high over the center column
+	for x in range(6, 9):
+		r.stone.set_terrain(x, 12, GridStone.Terrain.STONE)
+	for yy in range(9, 13):
+		r.stone.set_terrain(5, yy, GridStone.Terrain.STONE)
+		r.stone.set_terrain(9, yy, GridStone.Terrain.STONE)
+	pk.set_debug(pk.idx(7, 2), TilePacket.DebugTile.WATER_SOURCE)
+	for _t in 40:
+		r.tick()
+	if pk.mat_total(TilePacket.Mat.WATER) != 40 * GridDebug.SOURCE_DOSE:
+		return "the dose leaked: %d" % pk.mat_total(TilePacket.Mat.WATER)
+	# gapless: from the first water below the source to the basin floor, every tile holds at least a line -- the teleport periodically emptied mid-air tiles
+	var yy := 3
+	while yy < 12 and pk.get_pool(pk.idx(7, yy), TilePacket.Mat.WATER) < GridWater.LINE:
+		yy += 1
+	while yy < 12:
+		if pk.get_pool(pk.idx(7, yy), TilePacket.Mat.WATER) < GridWater.LINE:
+			return "gap at row %d: seek drew from the transit stack" % yy
+		yy += 1
 	return ""

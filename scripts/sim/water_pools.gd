@@ -80,3 +80,11 @@ func eject_lightest_up(i: int, amount: int) -> int:
 			flow.stamp(h, GridWater.FlowDir.UP, moved)
 		yy -= 1
 	return amount - remaining
+
+## Topmost row of the standing segment at or above (x, y): climbs while the tile above is visible liquid AND this tile is saturated -- falling transit stacks stop the walk, their water is not hydrostatic (world §3; resting is earned by saturation, the D.5 ruling read sim-side). Caller guarantees pool_total >= LINE at (x, y); the walk returns y when nothing above is standing.
+func standing_top(x: int, y: int) -> int:
+	var t := y
+	while t > 0 and pk.pool_total(pk.idx(x, t - 1)) >= GridWater.LINE \
+			and pk.pool_total(pk.idx(x, t)) >= pk.pool_capacity(pk.idx(x, t)):
+		t -= 1
+	return t

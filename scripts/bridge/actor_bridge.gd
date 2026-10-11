@@ -103,9 +103,12 @@ func _displace(b: ThermalBody) -> void:
 		if excess <= 0:
 			continue
 		var left := excess
+		left = _pour_sides(src, t.x, t.y, left)
 		var back := b.entered_from
-		if back != t and stone.in_bounds(back.x, back.y):
+		if left > 0 and back != t and stone.in_bounds(back.x, back.y):
 			left = _pour_into(src, stone.idx(back.x, back.y), left)
+		if left > 0:
+			left = _eject_up(src, t.x, t.y, left)
 		for lt in b.last_tiles:
 			if left <= 0:
 				break
@@ -293,3 +296,20 @@ func _dir_between(src: int, dst: int) -> int:
 		if GridWater.FLOW_DX[k] == dx and GridWater.FLOW_DY[k] == dy:
 			return k
 	return GridWater.FlowDir.NONE
+
+## The bow wave: pour left units into the tile's lateral neighbors, roomier side first -- the fill feeds back into the next comparison, so the sides alternate without bookkeeping and without the PRNG (law 9); returns what remains.
+func _pour_sides(src: int, x: int, y: int, left: int) -> int:
+	if left <= 0:
+		return left
+	var il := stone.idx(x - 1, y) if stone.in_bounds(x - 1, y) else -1
+	var ir := stone.idx(x + 1, y) if stone.in_bounds(x + 1, y) else -1
+	# roomier side first: state-derived, so the wave alternates as the fills feed back
+	if ir >= 0 and (il < 0 or pk.pool_free(ir) > pk.pool_free(il)):
+		var swap := il
+		il = ir
+		ir = swap
+	if il >= 0:
+		left = _pour_into(src, il, left)
+	if ir >= 0 and left > 0:
+		left = _pour_into(src, ir, left)
+	return left

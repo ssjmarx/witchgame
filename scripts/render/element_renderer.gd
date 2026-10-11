@@ -6,20 +6,21 @@ class_name ElementRenderer
 extends RefCounted
 
 const TILE := 16  # pixels per tile
-const FLOW_STREAK := 48  # <tune> — downward flow above this draws waterfall streaks
+const FALL_MIN := 16    # <tune> — downflow arrivals before a tile renders as falling (one line's worth)
 const SUB_QUADS: Array = [[GridSand.TL, 0, 0], [GridSand.TR, 8, 0], [GridSand.BL, 0, 8], [GridSand.BR, 8, 8]]
+const GAS_DRAW: Array[int] = [TilePacket.Mat.SMOKE, TilePacket.Mat.STEAM]   # density order; the band split walks it reversed -- the lightest gas takes the topmost rows
 const BOTTOM_MASK := GridSand.BL | GridSand.BR  # the two lower subtile slots
 const TOP_MASK := GridSand.TL | GridSand.TR      # the two upper subtile slots
-const LIQ_DRAW: Array[int] = [TilePacket.Mat.LAVA, TilePacket.Mat.ACID, TilePacket.Mat.WATER, TilePacket.Mat.OIL]   # liquids stack from the bottom, densest first
-const GAS_DRAW: Array[int] = [TilePacket.Mat.SMOKE, TilePacket.Mat.STEAM]   # density order; the band split walks it reversed -- the lightest gas takes the topmost rows
-const MAT_COLORS: Array[Color] = [Palette.BANK_WATER[1], Palette.BANK_OIL[1], Palette.BANK_ACID[1], Palette.BANK_LAVA[2], Palette.BANK_SMOKE[0], Palette.BANK_STEAM[0]]
-const MAT_SURFACE: Array[Color] = [Palette.BANK_WATER[2], Palette.BANK_OIL[2], Palette.BANK_ACID[2], Palette.BANK_LAVA[3], Palette.BANK_SMOKE[1], Palette.BANK_STEAM[1]]
 
 # the sim state this renderer draws
 var stone: GridStone
 var water: GridWater
 var sand: GridSand = null   # optional: bound by scenes that own a solid field
 var fx: CaFx                 # the second painter: ambiance under, effects over (world §9)
+var liquids: Liquids
+
+var _base: Image
+var _frame_ms := 0
 
 # the picture: one map-sized image pushed through a texture
 var image: Image
@@ -37,13 +38,36 @@ func _init(terrain: GridStone, field: GridWater, p_seed := 0) -> void:
 	fx = CaFx.new(terrain, field, p_seed)
 	image = Image.create(terrain.width * TILE, terrain.height * TILE, false, Image.FORMAT_RGBA8)
 	texture = ImageTexture.create_from_image(image)
+	liquids = Liquids.new(terrain, field)
+	_base = Image.create(terrain.width * TILE, terrain.height * TILE, false, Image.FORMAT_RGBA8)
 
-## Repaint the ambiance, every tile, the FX over-pass, and overlays
+## Repaint the tick base and recapture the desires: ambiance and solid terrain only. The dynamic layers paint per frame over a copy of this. Call on every state change -- tick, stroke, restore, overlay toggle.
 func redraw() -> void:
+	liquids.capture()
 	fx.under(image)
 	for y in stone.height:
 		for x in stone.width:
-			_draw_tile(x, y)
+			if stone.is_solid(x, y):
+				_draw_terrain(x, y)
+	_base.blit_rect(image, Rect2i(0, 0, image.get_width(), image.get_height()), Vector2i.ZERO)
+
+## The frame pass: advance the pose on the render clock, restore the tick base, then paint the dynamic layers -- liquids from the pose, gas, soil, and fire from the packet -- then the FX over-pass and overlays. Call from the owning scene's _process.
+func frame() -> void:
+	var now := Time.get_ticks_msec()
+	var dt := clampi(now - _frame_ms, 0, 250)
+	_frame_ms = now
+	liquids.advance(dt)
+	image.blit_rect(_base, Rect2i(0, 0, image.get_width(), image.get_height()), Vector2i.ZERO)
+	for y in stone.height:
+		for x in stone.width:
+			var px := x * TILE
+			var py := y * TILE
+			liquids.paint(image, x, y, px, py)
+			_draw_gas(x, y, px, py)
+			var n := stone.packet.get_sub(stone.idx(x, y), TilePacket.K_SOIL)
+			if n != 0:
+				_draw_soil(x, y, px, py, n)
+			_draw_fire(x, y, px, py)
 	fx.over(image)
 	if debug:
 		_draw_debug()
@@ -53,30 +77,20 @@ func redraw() -> void:
 		_draw_cursor()
 	texture.update(image)
 
-## Paint one tile: beveled stone or planked wood (fire quads ride either), gases dithered from the top, liquids leveling from the bottom over them, soil quads over the fill they displace, fire bits on top of everything the tile holds.
-func _draw_tile(x: int, y: int) -> void:
+## Paint one solid tile: beveled stone or planked wood -- the terrain face the base layer keeps.
+func _draw_terrain(x: int, y: int) -> void:
 	var px := x * TILE
 	var py := y * TILE
 	var i := stone.idx(x, y)
-	if stone.is_solid(x, y):
-		var wood := stone.packet.get_terrain(i) == TilePacket.T.WOOD
-		var fill := Palette.BANK_WOOD[1] if wood else Palette.BANK_STONE[1]
-		var dark := Palette.BANK_WOOD[0] if wood else Palette.BANK_STONE[0]
-		image.fill_rect(Rect2i(px, py, TILE, TILE), fill)
-		image.fill_rect(Rect2i(px, py, TILE, 1), dark)
-		image.fill_rect(Rect2i(px, py, 1, TILE), dark)
-		image.set_pixel(px + 11, py + 11, dark)
-		if wood:
-			image.fill_rect(Rect2i(px, py + 8, TILE, 1), dark)   # the plank seam -- minimal wood identity until step 5's real planks
-		_draw_fire(x, y, px, py)
-		return
-	var n := stone.packet.get_sub(i, TilePacket.K_SOIL)
-	if _liquid_total(i) >= GridWater.LINE:
-		_draw_water(x, y, px, py, n)
-	_draw_gas(x, y, px, py)
-	if n != 0:
-		_draw_soil(x, y, px, py, n)
-	_draw_fire(x, y, px, py)
+	var wood := stone.packet.get_terrain(i) == TilePacket.T.WOOD
+	var fill := Palette.BANK_WOOD[1] if wood else Palette.BANK_STONE[1]
+	var dark := Palette.BANK_WOOD[0] if wood else Palette.BANK_STONE[0]
+	image.fill_rect(Rect2i(px, py, TILE, TILE), fill)
+	image.fill_rect(Rect2i(px, py, TILE, 1), dark)
+	image.fill_rect(Rect2i(px, py, 1, TILE), dark)
+	image.set_pixel(px + 11, py + 11, dark)
+	if wood:
+		image.fill_rect(Rect2i(px, py + 8, TILE, 1), dark)   # the plank seam -- minimal wood identity
 
 ## Overlay air pockets, per-segment level lines, and the tile grid (G).
 func _draw_debug() -> void:
@@ -146,22 +160,6 @@ func _draw_cursor() -> void:
 	image.fill_rect(Rect2i(px, py, 1, TILE), Palette.DEBUG_CURSOR)
 	image.fill_rect(Rect2i(px + TILE - 1, py, 1, TILE), Palette.DEBUG_CURSOR)
 
-## Waterfall streaks: downward flow at mag >= FLOW_STREAK with dir DOWN draws hashed vertical streaks keyed on (tile, tick_count) — hash-based, never the sim PRNG (world §1). Returns true when streaks were drawn; the caller then draws no fill or crest -- falling water is streaks, not pooled lines.
-func _draw_flow(x: int, y: int, px: int, py: int) -> bool:
-	if water.get_flow_mag(x, y) < FLOW_STREAK:
-		return false
-	if water.get_flow_dir(x, y) != GridWater.FlowDir.DOWN:
-		return false
-	var hsh := (x * 92837111 + y * 689287499 + water.tick_count * 283923481) & 0x7FFFFFFF
-	var ln := 3 + ((hsh >> 14) % 3)
-	var s1 := px + (hsh % TILE)
-	var s2 := px + ((hsh >> 7) % TILE)
-	var mat := MAT_SURFACE[_majority(stone.idx(x, y))]
-	image.fill_rect(Rect2i(s1, py, 1, ln), mat)
-	if s2 != s1:
-		image.fill_rect(Rect2i(s2, py, 1, ln), mat)
-	return true
-
 ## Loose soil: one 8x8 quad per set nibble bit, light lip on subtiles with no soil directly above, damp darkening from the top of the occupied region (8 damp per pixel line -- the creeping front).
 func _draw_soil(x: int, y: int, px: int, py: int, n: int) -> void:
 	var n_up := 0
@@ -194,68 +192,9 @@ func _draw_soil(x: int, y: int, px: int, py: int, n: int) -> void:
 			if y1 > y0:
 				image.fill_rect(Rect2i(px + c[1], y0, 8, y1 - y0), Palette.BANK_SOIL[0])
 
-## Waterline lift over the tile's own soil subtiles: a squeezed pool reads higher on the fill. v = raw lines (units >> 4), n = soil nibble; returns the drawn line count, clamped to 15.
-func _lifted_lines(v: int, n: int) -> int:
-	var bottom := TilePacket.POPCOUNT[n & BOTTOM_MASK]
-	var top := TilePacket.POPCOUNT[n & TOP_MASK]
-	var shown := v
-	if bottom == 2:
-		if top == 0:
-			shown = v + 4   # 2b: both bottom slots -- flat lift
-		else:
-			shown = mini(2 * v + 4, v + 6)   # 2c: the 2b lift, plus the original lines doubled, cap +6
-	elif bottom == 1:
-		var cap := 2
-		if top > 0:
-			cap = 4   # 2d widens 2a's cap when a top slot is also filled
-		shown = mini(2 * v, v + cap)
-	return mini(shown, 15)
-
-## Draw one tile's liquids (the gases drew first, top-down; liquids render over gas by ruling): waterfall streaks replace the fill; a tile covered by liquid above fills its full height stacked by share; the surface tile fills by the subtile-lifted line count, stacked densest from the bottom, crest on the topmost material.
-func _draw_water(x: int, y: int, px: int, py: int, n: int) -> void:
-	if _draw_flow(x, y, px, py):
-		return   # falling liquid: streaks stand in for the lines
-	var i := stone.idx(x, y)
-	var liq := _liquid_total(i)
-	if liq < GridWater.LINE:
-		return
-	var covered := y > 0 and _liquid_total(stone.idx(x, y - 1)) >= GridWater.LINE
-	var lines_total := _lifted_lines(liq >> 4, n) if not covered else TILE
-	var deficit := lines_total
-	for m in LIQ_DRAW:
-		@warning_ignore("integer_division")
-		deficit -= lines_total * stone.packet.get_pool(i, m) / liq
-	var ycur := py + TILE
-	var top_m := -1
-	for k in LIQ_DRAW.size():
-		var m: int = LIQ_DRAW[k]
-		var units := stone.packet.get_pool(i, m)
-		if units == 0:
-			continue
-		@warning_ignore("integer_division")
-		var lm := lines_total * units / liq
-		if top_m < 0:
-			lm += deficit   # the densest material present absorbs the partition remainder
-		ycur -= lm
-		image.fill_rect(Rect2i(px, ycur, TILE, lm), MAT_COLORS[m])
-		top_m = m
-	if not covered and top_m >= 0:
-		image.fill_rect(Rect2i(px, ycur, TILE, 1), MAT_SURFACE[top_m])
-
 ## Bind the solid field for its flow export; scenes without one skip the arrows.
 func bind_sand(p_sand: GridSand) -> void:
 	sand = p_sand
-
-## Majority liquid at tile i -- the streak color's proxy (ties and empties read as water).
-func _majority(i: int) -> int:
-	var best := TilePacket.Mat.WATER
-	var best_v: int = stone.packet.get_pool(i, best)
-	for m in range(1, TilePacket.MAT_COUNT):
-		var v := stone.packet.get_pool(i, m)
-		if v > best_v:
-			best = m as TilePacket.Mat
-			best_v = v
-	return best
 
 ## Gases draw top-down, eight units per line: checker dither from the tile's top to a full tile at 128, then one solid line per further eight (ceil) until the tile reads fully solid at 255 -- half liquid density, sub-eight films draw nothing. Amount and ratio are separate reads: the row count comes from the tile's TOTAL gas, and the rows split across the gases by share, lightest band on top (the liquid stack partition, mirrored).
 func _draw_gas(x: int, y: int, px: int, py: int) -> void:
@@ -281,7 +220,7 @@ func _draw_gas(x: int, y: int, px: int, py: int) -> void:
 		var rm := rows_total * units / total
 		if rcur == 0:
 			rm += deficit   # the lightest absorbs the partition remainder -- the densest's job in _draw_water, mirrored
-		var col: Color = MAT_COLORS[m]
+		var col: Color = Palette.MAT_FILL[m]
 		var solid_h := mini(rm, maxi(0, solid - rcur))
 		if solid_h > 0:
 			image.fill_rect(Rect2i(px, py + rcur, TILE, solid_h), col)
@@ -290,10 +229,6 @@ func _draw_gas(x: int, y: int, px: int, py: int) -> void:
 			for xx in range(off, TILE, 2):
 				image.set_pixel(px + xx, py + r, col)
 		rcur += rm
-
-## Liquid units at tile i -- the pool minus the two gases; lines, crests, and the covered check all read this, never pool_total.
-func _liquid_total(i: int) -> int:
-	return stone.packet.pool_total(i) - stone.packet.get_pool(i, TilePacket.Mat.SMOKE) - stone.packet.get_pool(i, TilePacket.Mat.STEAM)
 
 ## Fire bits draw as 8x8 ember quads on the fuel tile plus dancing licks -- one per bit, in the bottom subtile row of the non-solid tile above, hash-keyed on (tile, tick, bit) so every flame tongues on its own phase; never the sim PRNG (world §1). The lick is pure render: flame is picture, air is rules.
 func _draw_fire(x: int, y: int, px: int, py: int) -> void:
@@ -307,6 +242,7 @@ func _draw_fire(x: int, y: int, px: int, py: int) -> void:
 		if (f & c[0]) == 0:
 			continue
 		var hsh := (x * 92837111 + y * 689287499 + water.tick_count * 283923481 + b * 40503) & 0x7FFFFFFF
+		@warning_ignore("shadowed_variable")
 		var frame := hsh % 3
 		var col := Palette.BANK_FIRE[1] if frame == 0 else (Palette.BANK_FIRE[2] if frame == 1 else Palette.BANK_FIRE[3])
 		image.fill_rect(Rect2i(px + c[1], py + c[2], 8, 8), col)

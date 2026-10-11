@@ -128,12 +128,13 @@ func _bt_no_drain() -> String:
 		return "the pool drained: %d of 1530" % region
 	return ""
 
-## BT10: entry blocked -- the overflow climbs her own column and breaks the surface above (192 up, 63 stays, the family whole).
+## BT10: entry and sides blocked -- the overflow climbs her own column and breaks the surface above (192 up, 63 stays, the family whole).
 func _bt_splash() -> String:
 	var r := Room.new(GRID_W, GRID_H, 39)
 	var t := Vector2i(7, 7)
 	r.water.set_water(t.x, t.y, 255)
 	r.water.set_water(6, 7, 255)
+	r.water.set_water(8, 7, 255)
 	var b := ThermalBody.new()
 	b.wetness = 254
 	b.drip_mul = 0
@@ -148,6 +149,8 @@ func _bt_splash() -> String:
 		return "tile water %d, expected 63" % r.water.get_water(t.x, t.y)
 	if r.water.get_water(7, 6) != 192:
 		return "surface splash %d, expected 192" % r.water.get_water(7, 6)
+	if r.water.get_water(6, 7) != 255 or r.water.get_water(8, 7) != 255:
+		return "the sealed walls took water"
 	if _family_total(r, b) != fam0:
 		return "family drifted %d" % (fam0 - _family_total(r, b))
 	return ""

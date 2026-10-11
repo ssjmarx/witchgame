@@ -43,7 +43,7 @@ func under(image: Image) -> void:
 			if water.is_air_sealed(x, y):
 				image.blend_rect(_sealed, Rect2i(0, 0, TILE, TILE), Vector2i(x * TILE, y * TILE))
 
-## The over-pass: the effects layer (currents, waves, splashes, bubbles, licks) -- empty until the next lab, wired so the painter's order never changes again.
+## The over-pass: dark until Lab C -- the marks' gates read the dead fall-tier world and would poke above curved surfaces; motion returns as waves and lines driven by the pose's flow field.
 func over(_image: Image) -> void:
 	pass
 

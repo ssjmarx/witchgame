@@ -40,7 +40,7 @@ func pass_all(m: int) -> void:
 			else:
 				x += 1
 
-## Level one horizontal run of material m by pressure: heads are density-weighted column integrals from each surface to the run row -- true hydrostatic pressure at the choke. Donors must carry m at the conduit row; every column of the run may receive.
+## Level one horizontal run of material m by pressure: heads are density-weighted column integrals from each standing surface to the run row -- falling transit water is not hydrostatic, the rain column is not seek's donor. Donors must carry m at the conduit row; every column of the run may receive.
 func run(x0: int, x1: int, y: int, m: int) -> void:
 	var rho := TilePacket.DENSITY[m]
 	var ptops := PackedInt32Array()
@@ -50,7 +50,7 @@ func run(x0: int, x1: int, y: int, m: int) -> void:
 	heads.resize(width)
 	var cols: Array = []
 	for x in range(x0, x1 + 1):
-		ptops[x] = pools.pool_top(x, y)
+		ptops[x] = pools.standing_top(x, y)
 		var h := 0
 		for yy in range(ptops[x], y + 1):
 			for m2 in TilePacket.MAT_COUNT:
@@ -79,7 +79,7 @@ func run(x0: int, x1: int, y: int, m: int) -> void:
 @warning_ignore("integer_division")
 func transfer_level(s: int, t: int, y: int, diff: int, ptops: PackedInt32Array, m: int) -> int:
 	var rho := TilePacket.DENSITY[m]
-	var s_top := pools.segment_top(s, y, m)
+	var s_top := pools.standing_top(s, y)   # the donor's standing surface: seek never draws from transit rain (world §3)
 	# giving side: the column must be able to recede (air replaces the liquid)
 	if s_top > 0 and stone.is_solid(s, s_top - 1):
 		# capped by stone, but it may still recede if a side pocket expands into the vacated cells
@@ -100,7 +100,7 @@ func transfer_level(s: int, t: int, y: int, diff: int, ptops: PackedInt32Array, 
 	var same_mat := false
 	for yy in range(pt, pb + 1):
 		if pk.get_pool(pk.idx(t, yy), m) >= GridWater.LINE:
-			entry = pk.idx(t, pools.segment_top(t, yy, m))
+			entry = pk.idx(t, maxi(pools.segment_top(t, yy, m), pt))   # clamped to the standing segment: deposits land on standing water, never mid-transit
 			same_mat = true
 			break
 	if not same_mat:
@@ -132,7 +132,7 @@ func transfer_level(s: int, t: int, y: int, diff: int, ptops: PackedInt32Array, 
 			room += pools.eject_lightest_up(entry, want - room)
 		else:
 			var e_y := pk.xy_of(entry)
-			if e_y.y == 0:
+			if e_y == Vector2i.ZERO:
 				return 0   # no column above to yield
 			var iface := entry - width
 			if pk.pool_total(iface) < GridWater.LINE:
@@ -143,7 +143,7 @@ func transfer_level(s: int, t: int, y: int, diff: int, ptops: PackedInt32Array, 
 	var move := mini(want, room)
 	if move <= 0:
 		return 0
-	# remove from the donor's surface, walking down toward the junction; take_pool reports what it got, so the walk cannot over-draw
+	# remove from the donor's standing surface, walking down toward the junction; take_pool reports what it got, so the walk cannot over-draw
 	var remaining := move
 	var yy2 := s_top
 	while remaining > 0:

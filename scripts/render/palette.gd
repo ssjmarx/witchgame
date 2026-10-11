@@ -24,7 +24,6 @@ const BONE       := Color("#deeed6")   # off-white
 const MASTER: Array[Color] = [INK, PLUM, INDIGO, TAUPE, RUST, MOSS, RED, OLIVE, CORNFLOWER, ORANGE, SLATE, GREEN, TAN, CYAN, YELLOW, BONE]
 
 # -- Guests: additions beyond DB16, one # reason per color -- the lock is procedural, never a ceiling
-# -- Guests: additions beyond DB16, one # reason per color -- the lock is procedural, never a ceiling
 const FLOOR_BLUE     := Color("#0e1628")   # the blue dungeon's floor: midnight navy, the whisper set
 const MASONRY_BLUE   := Color("#142440")   # the blue dungeon's bricks, pillars, and flutes
 const GLINT_BLUE     := Color("#182c50")   # the blue dungeon's glint
@@ -61,3 +60,8 @@ const DEBUG_OPEN      := Color("#1e4a44")
 const DEBUG_LEVEL     := Color("#a0d8c0")
 const DEBUG_FLOW      := Color("#5ae682")
 const DEBUG_SOIL_FLOW := Color("#368c4e")
+
+# -- Material faces: fill and crest per material, composed from the banks -- the single source every layer quotes ------
+const MAT_FILL: Array[Color] = [BANK_WATER[1], BANK_OIL[1], BANK_ACID[1], BANK_LAVA[2], BANK_SMOKE[0], BANK_STEAM[0]]
+const MAT_CREST: Array[Color] = [BANK_WATER[2], BANK_OIL[2], BANK_ACID[2], BANK_LAVA[3], BANK_SMOKE[1], BANK_STEAM[1]]
+const MAT_FLOW: Array[Color] = [BANK_WATER[2], BANK_OIL[2], BANK_ACID[2], BANK_LAVA[0], BANK_SMOKE[1], BANK_STEAM[1]]   # the flow mark -- lava reads as INK flecks, the day-one ruling
