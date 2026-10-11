@@ -14,9 +14,17 @@
 - **Her dungeon sets are code**: four ambience banks — whisper blue, brick crypt, moss grotto, sandstone catacomb — recolor the same cave backdrop; a backdrop's identity is (room seed, set), so every chamber of her map can carry its own dark deterministically
 - **The room editor is her map's seed** (`test_editor.tscn`): four persistent rooms, paint over tiles and debug furniture (water sources, drains, steam vents, open air), an inspector card, a witch chorus sharing one input — her seven chambers author into this, and the save bytes are the level format's first real artifact (world §10)
 
+**Changelog v3.3 — the matter arc rulings (design-ahead-of-code; world v1.8 §3)**
+
+    Her swim becomes buoyancy (world §3): no more infinite stroke-jumping — she floats to the top, rests with her bottom half submerged, and a stroke from the surface buys exactly 10px above the water top (the SACRED jump, kept through water). Walking the bottom wants ballast — the future grab mechanic's job, and the weight-4 turtle is its first customer (ruling pending)
+    Cold is cut: no ice, no freeze/thaw, no underfoot melt. The turtle loses its COLD aura — re-theme pending; its landed state (heavy riser, pressure plates) unchanged
+    Her dungeon is matter now (the bedrock lab): wood and stone terrain retire into structures — C3's aqueduct burns as a wood_s structure and collapses by the compromiserule, C5's far wall is a wood_s wall that must be bone-dry to catch, and C2's fizzle grind survives as wood_s moisture. A chipped wall admits water: acid digs, water follows
+    Smolder is hers now: the 4 s timer lives actor-side (the beam lab owns it; world §4.4 superseded) — the CA keeps only the steam and the fuel
+    C3's rain authors with the shipped furniture (sources and drains) until/unless a rain system returns with world's boundary flux
+
 **Changelog v3.1 — the bridge lab lands her substrate (world v1.6)**
 
-- **She walks.** `Witch` is code: a `CharacterBody2D` on a `ThermalBody`, the 8×24 hitbox (a subtile wide, three tall), the 10px jump SACRED in engine code, the capacity-aware wade line, swim (stroke = jump, the crouch dive), the outlined sheet driving her anim state — and she never writes a tile; everything crosses the bridge. The witch lab (`test_witch.tscn`) is her playground: spawn/teleport (N), paint stone/water/wood/soil/damp, ignite (I), live heat/wetness/family readout
+- **She walks.** `Witch` is code: a `CharacterBody2D` on a `ThermalBody`, the 8×24 hitbox (a subtile wide, three tall), the 10px jump SACRED in engine code, the capacity-aware wade line, swim (submerged → buoyancy, world §3's weight system: floats to the top, rests half-submerged, the 10px surface stroke — no water-walking, no infinite stroke-jumping; ballast comes with the grab mechanic), the outlined sheet driving her anim state — and she never writes a tile; everything crosses the bridge. The witch lab (`test_witch.tscn`) is her playground: spawn/teleport (N), paint stone/water/wood/soil/damp, ignite (I), live heat/wetness/family readout
 - **The bridge carries her now** (world §4 shipped): ABSORB/DRIP/BOIL/CROSS-TALK/DRY, fire contact +4/t — the mop verb, the steam bomb, and the fire-walk budget are engine law with acceptance proofs (BT1–BT14). Her panic clock, the smolder stimulus, and her verbs (lasso, beam, tags) remain game-side
 - **Wetness is 1:1 now — the 1:1:1:1 retune is law** (world v1.6): water, steam, damp, and wetness are one unit; her meter is 0–64 and v3.0's "0–254 even" body is superseded. The carry window halves (~16 s at saturation, DRIP 4/s) — the knob stays the DRIP rate, never a second lattice. C2's mop-and-drip beat gets faster to drain; author accordingly
 - Her dungeons have their memory now: the rooms lab (RT1–RT4) shipped snapshot/restore and the frozen unobserved room (world §8's first half), and the collision mirror keeps her floors honest — fire burns them out from under her
@@ -71,7 +79,7 @@ Inherited from world §1 in full: Godot 4.5, 240×240 / 720×720, integer scalin
 
 ## 2. Data model
 
-Inherited from world §2 in full — packet, content pool, room records, ledger. **No game-side extensions to the packet.** Her content leans on: DAMP (her ignite fizzle, the wick), FUEL (everything she burns, tags included), COLD (the turtle), SURFACE (growth, glaze), FLOW (diffusers), and the smolder overlay (world §4.4). Tags are spawned fuel decals, not terrain — a tagged wall tile carries FUEL 8 in a marker.
+Inherited from world §2 in full — packet, content pool, room records, ledger. **No game-side extensions to the packet.** Her content leans on: DAMP (her ignite fizzle, the wick — now moisture), FUEL (everything she burns, tags included — now wood_s burn), SURFACE (growth, glaze), FLOW (diffusers), and the smolder overlay (actor-side — world §4.4 superseded). Tags are spawned fuel decals, not terrain — a tagged wall tile carries FUEL 8 in a marker.
 
 ## 3. Element simulation
 
@@ -103,7 +111,7 @@ Her state reads, no meters anywhere:
 ```
 GRAVITY = 480                     # inherited
 JUMP_V  = 98                      # 10px exactly — SACRED, shared legs
-SWIM_GRAV = 120                   # inherited
+SWIM_GRAV = 120                   # <retime at the buoyancy lab>
 PANIC_MAX = 5.0                   # accrued panic → KO
 HIT_PANIC = 1.0                   # forced panic per hit
 PANIC_RUN = 70 px/s
@@ -130,7 +138,7 @@ TRAIL = 5 s                       # her breadcrumb extension of the engine ring
 
 - At **HOT (63)** she smolders any fuel she overlaps: the 4 s warnings bloom at her feet as she runs. Her wake half-smolders and decays behind her (0.5 s hold, 2× decay); cornered in vines, it catches. Fleeing through her own escape route is the emergent drama — the room reset forgives
 - She **dries damp soil underfoot** (8 damp/s) — a hot witch crossing a wet slope triggers the landslide herself
-- She **melts ice underfoot** (16 water-eq/s) and **boils puddles** by the tier table
+- She **boils puddles** by the tier table
 - She sheds heat only as steam: cross-talk off her own wetness, pool water, rain, or a held wet enemy leaking into her tile. The puddle beyond the flames is the heat dump — that is the fire-walk license, reframed and kept
 
 **Her wetness (the mop-and-drip verb, universalized).** ABSORB by tier — she can mop a puddle dry (a full tile instantly; a film takes patience, and the tiers are honest about which). SATURATED (64 since the 1:1 retune) carries ~16 s of drip — she chooses where it lands by standing there, and the randomized drip is lumpy by design. Standing in rain soaks her. She is a timed water carrier, still; the meter is the drip, still; fire zones burn off her cargo, now at half-rate panic as payment.
@@ -154,7 +162,7 @@ The core is identical for both girls (world §7): IDLE → FIRE_TIP (straight, 7
 | Slime | 1 | drip_mul 0 — goo, not water | slow hop patrol | fat lob arc | SPLAT: 8px riser, fire blanket, covers spikes; lasso re-gathers |
 | Woodpecker | 1 | neutral | hover sine, dives | straight, never arcs | PERCH: sticks in wall, walkable top, angry wiggle |
 | Wisp | 1 | **HOT actor, self-sustaining** | drifts at you | straight, slow | STICK: flame + light 20 s; water douses it dead (its heat dumps in one cloud) |
-| Turtle | 4 | COLD radiator (3×3 tile flag) | plays dead until 2-tile proximity | heavy short arc | SITS: heavy riser; 3×3 COLD aura; pressure plates |
+| Turtle | 4 | neutral (re-theme pending — cold is cut) | plays dead until 2-tile proximity | heavy short arc | SITS: heavy riser; pressure plates |
 | Breeze | 1 | neutral | drifts horizontally | sticks where thrown | BLOWS: wind stamp, 4 tiles cardinal; ventilation + ember-leaps (wind system: authored or stubbed) |
 | Eel | 1 | wet always — the conductive body | patrols its water | straight, slow | ZAP: discharges through its wet body, 20 s; recapturable. Wet actors in the body take a hit |
 
@@ -202,7 +210,7 @@ The focal point renders at exactly 16 tiles — the player sees the lens converg
 
 **Terrain is the beam's only terminator.** It overruns its aim and dies on the first opaque thing. Occluders follow subtile shapes (a soil berm honestly shades the beam); glaze is opaque. Standing water doesn't affect it; **a lot of water moving does** — any tile above DIFFUSER_FLOW is a wall of light (the waterfall in C6 is a level-design noun).
 
-**Smolder is CA-side (world §4.4).** The beam's burn band sets the stimulus; the CA builds the 4 s timer, holds 0.5 s, decays at 2×, and completes into ignition — or into the fizzle on damp fuel: hiss, steam, DAMP −8, reset. Beam-drying a wall means four seconds per fizzle, repeated — the deliberately annoying grind, now engine law rather than beam special-case. Wetting or burying resets instantly. No heat field anywhere, ever.
+**Smolder is actor-side (world §4.4 superseded — the beam owns the timer; the CA keeps the steam and the fuel).** The beam's burn band sets the stimulus; the beam builds the 4 s timer, holds 0.5 s, decays at 2×, and completes into ignition — or into the fizzle on damp fuel: hiss, steam, DAMP −8, reset. Beam-drying a wall means four seconds per fizzle, repeated — the deliberately annoying grind, now engine law rather than beam special-case. Wetting or burying resets instantly. No heat field anywhere, ever.
 
 **LIT semantics:** binary for growth steering. Firelight never steers growth. Ranked light is reserved for wild growth, a post-slice enemy.
 
