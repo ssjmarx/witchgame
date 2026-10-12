@@ -74,7 +74,7 @@ func _cell_solid(cx: int, cy: int) -> bool:
 	var i := (cx >> 1) + (cy >> 1) * width
 	if TilePacket.FULL_SOLID[pk.get_terrain(i)]:
 		return true
-	var n := pk.stone_s[i] | pk.soil_s[i] | pk.ice_s[i]
+	var n := pk.stone_s[i] | pk.soil_s[i] | pk.wood_s[i]
 	var bit := 1 if (cy & 1) == 1 else 4   # bottom cells read BL/BR, top cells TL/TR
 	if (cx & 1) == 1:
 		bit <<= 1

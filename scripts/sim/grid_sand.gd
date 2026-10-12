@@ -11,10 +11,10 @@ const BR := 2
 const TL := 4
 const TR := 8
 
-# expanded-cell codes: 0 = empty, else TilePacket kind + 1 (K_STONE -> 1, K_SOIL -> 2, K_ICE -> 3)
+# expanded-cell codes: 0 = empty, else TilePacket kind + 1 (K_STONE -> 1, K_SOIL -> 2, K_WOOD -> 3)
 const EMPTY := 0
 
-# -- Parameter tables (indexed by TilePacket kind: K_STONE, K_SOIL, K_ICE) ----
+# -- Parameter tables (indexed by TilePacket kind: K_STONE, K_SOIL, K_WOOD) ----
 
 # vertical 8px steps per tick through open air (ruling: one step, all materials)
 const FALL: Array[int] = [1, 1, 1]
@@ -57,7 +57,7 @@ func _init(w: int, h: int, terrain: GridStone, p_water: GridWater) -> void:
 func idx(x: int, y: int) -> int:
 	return y * width + x
 
-## Total loose-solid subtiles of one kind (K_STONE/K_SOIL/K_ICE) in the field -- the mass checksum.
+## Total loose-solid subtiles of one kind (K_STONE/K_SOIL/K_WOOD) in the field -- the mass checksum.
 func total(kind: int) -> int:
 	return pk.sub_total(kind)
 
@@ -66,7 +66,7 @@ func clear() -> void:
 	for i in width * height:
 		pk.set_sub(i, TilePacket.K_STONE, 0)
 		pk.set_sub(i, TilePacket.K_SOIL, 0)
-		pk.set_sub(i, TilePacket.K_ICE, 0)
+		pk.set_sub(i, TilePacket.K_WOOD, 0)
 	tick_count = 0
 	_sub.fill(0)
 
@@ -239,7 +239,7 @@ func get_flow_dir(x: int, y: int) -> int:
 		return GridWater.FlowDir.NONE
 	return _flow_dir[idx(x, y)]
 
-## Book a tile crossing: export the arrival's flow mass, then hand off damp -- soil only (stone and ice hold none), an even share of the source's damp over its remaining soil subtiles, capped at one subtile's worth. Live counts on both sides keep the transfer inside capacity by construction (the carry proof).
+## Book a tile crossing: export the arrival's flow mass, then hand off damp -- soil only (stone and wood hold none), an even share of the source's damp over its remaining soil subtiles, capped at one subtile's worth. Live counts on both sides keep the transfer inside capacity by construction (the carry proof).
 @warning_ignore("integer_division")
 func _cross_tile(sx: int, sy: int, tx: int, ty: int, kind: int) -> void:
 	var src := idx(sx >> 1, sy >> 1)
@@ -269,7 +269,7 @@ func _soil_in_tile(x: int, y: int) -> int:
 	if _sub[base + w2 + 1] == TilePacket.K_SOIL + 1: n += 1
 	return n
 
-## The sealed-chamber swap gate: the destination terrain must hold a pool (the entry gate's first clause -- the swap replaces budget and escape, never terrain), then the source must absorb the liquid the target sheds. Soil tolerates the one-unit clamp gap (its damp drinks the squeeze); stone and ice demand the exact fit.
+## The sealed-chamber swap gate: the destination terrain must hold a pool (the entry gate's first clause -- the swap replaces budget and escape, never terrain), then the source must absorb the liquid the target sheds. Soil tolerates the one-unit clamp gap (its damp drinks the squeeze); stone and wood demand the exact fit.
 func _swap_ok(sx: int, sy: int, tx: int, ty: int, kind: int) -> bool:
 	var src := idx(sx >> 1, sy >> 1)
 	var dst := idx(tx >> 1, ty >> 1)

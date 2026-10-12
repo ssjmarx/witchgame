@@ -196,7 +196,7 @@ privilege, per world §3).
 
 - `_init(w: int, h: int, terrain: GridStone, p_water: GridWater) -> void` - Size the field, bind the packet via the stone facade and the water field for headroom queries.
 - `idx(x: int, y: int) -> int` - Flat-array index of tile (x, y).
-- `total(kind: int) -> int` - Total loose-solid subtiles of one kind (K_STONE/K_SOIL/K_ICE) in the field -- the mass checksum.
+- `total(kind: int) -> int` - Total loose-solid subtiles of one kind (K_STONE/K_SOIL/K_WOOD) in the field -- the mass checksum.
 - `clear() -> void` - Reset: zero every subtile column and the tick counter.
 - `tick() -> void` - One tick: expand, run the sand pass, repack and book. The paired water tick owns the packet assert -- its displacement pass resolves repack's deficits same-tick.
 - `_expand() -> void` - Rebuild the expanded material grid from the packet nibbles (read-only).
@@ -213,9 +213,9 @@ privilege, per world §3).
 - `flow_stamp(i: int, dir: int, mag: int) -> void` - Register a subtile arrival at tile i (one mass quantum, dir code); magnitudes sum, direction follows the largest single arrival (first stamp wins ties -- fixed sweep order, so deterministic).
 - `get_flow_mag(x: int, y: int) -> int` - Flow strength at (x, y): subtile mass arrived this tick, 64 pool-units per subtile; 0 outside.
 - `get_flow_dir(x: int, y: int) -> int` - Dominant flow direction at (x, y); NONE outside.
-- `_cross_tile(sx: int, sy: int, tx: int, ty: int, kind: int) -> void` - Book a tile crossing: export the arrival's flow mass, then hand off damp -- soil only (stone and ice hold none), an even share of the source's damp over its remaining soil subtiles, capped at one subtile's worth. Live counts on both sides keep the transfer inside capacity by construction (the carry proof).
+- `_cross_tile(sx: int, sy: int, tx: int, ty: int, kind: int) -> void` - Book a tile crossing: export the arrival's flow mass, then hand off damp -- soil only (stone and wood hold none), an even share of the source's damp over its remaining soil subtiles, capped at one subtile's worth. Live counts on both sides keep the transfer inside capacity by construction (the carry proof).
 - `_soil_in_tile(x: int, y: int) -> int` - Count soil subtile cells in tile (x, y) per the live expanded grid -- damp's only carriers and only capacity. Caller guarantees in-bounds.
-- `_swap_ok(sx: int, sy: int, tx: int, ty: int, kind: int) -> bool` - The sealed-chamber swap gate: the destination terrain must hold a pool (the entry gate's first clause -- the swap replaces budget and escape, never terrain), then the source must absorb the liquid the target sheds. Soil tolerates the one-unit clamp gap (its damp drinks the squeeze); stone and ice demand the exact fit.
+- `_swap_ok(sx: int, sy: int, tx: int, ty: int, kind: int) -> bool` - The sealed-chamber swap gate: the destination terrain must hold a pool (the entry gate's first clause -- the swap replaces budget and escape, never terrain), then the source must absorb the liquid the target sheds. Soil tolerates the one-unit clamp gap (its damp drinks the squeeze); stone and wood demand the exact fit.
 - `_swap_move(sx: int, sy: int, tx: int, ty: int, kind: int) -> void` - Perform the vertical swap: the subtile crosses (grid move, flow stamp, damp handoff), then the target sheds its excess up into the source -- take-then-add, booked, no escape needed: the vacated space is the liquid's home.
 
 ## res://scripts/sim/grid_stone.gd
@@ -304,7 +304,7 @@ is the row number.
 - `xy_of(i: int) -> Vector2i` - Tile (x, y) of flat index i.
 - `get_terrain(i: int) -> int` - Terrain value at tile i.
 - `set_terrain(i: int, t: int) -> bool` - Set terrain at tile i; true when the value changed (GridStone's signal rides on this).
-- `get_sub(i: int, kind: int) -> int` - Subtile nibble at tile i; kind: 0 stone_s, 1 soil_s, 2 ice_s (matches SUB_SINK order).
+- `get_sub(i: int, kind: int) -> int` - Subtile nibble at tile i; kind: 0 stone_s, 1 soil_s, 2 wood_s (matches SUB_SINK order).
 - `set_sub(i: int, kind: int, n: int) -> int` - Set a nibble column, book the popcount delta; returns the capacity deficit created (ejecting that overflow is the flow engine's job, world §3).
 - `solid_capacity(i: int) -> int` - Capacity against matter only: terrain and subtiles -- the ledger's legality line; the claim is overlay and never audited.
 - `pool_capacity(i: int) -> int` - Full-solid terrain = 0, otherwise the solid capacity minus the actor claim -- the bridge's ejection target (world.md §4).
@@ -320,7 +320,7 @@ is the row number.
 - `set_pool(i: int, m: int, v: int) -> int` - Tool path (paint/erase): force tile i's m toward v; returns spill (units refused). Never destroys other materials or pushes past capacity (over-budget stays until flow ejects).
 - `_book(row: int, delta: int) -> void` - Apply delta to the booked total of one ledger row.
 - `mat_total(m: int) -> int` - Fresh recount of one pool column.
-- `sub_total(kind: int) -> int` - Fresh popcount recount of one subtile column (kind: K_STONE/K_SOIL/K_ICE) -- the mass checksum.
+- `sub_total(kind: int) -> int` - Fresh popcount recount of one subtile column (kind: K_STONE/K_SOIL/K_WOOD) -- the mass checksum.
 - `assert_all() -> bool` - Double-entry check: booked totals vs fresh recounts, plus the per-tile pool constraint. Called at the end of every tick.
 - `clear_damp() -> void` - Zero the damp and tag columns, booking the removal. (Clear/reset path.)
 - `lightest_mat(i: int) -> int` - Material id of the single lowest-density content at tile i; -1 when the pool is empty.
@@ -486,7 +486,7 @@ inspector card, and a chorus of witches sharing one input -- a playground.
 - `_unhandled_key_input(event: InputEvent) -> void` - Space is the witches' jump -- swallow it before the harness reads pause; pause lives on P.
 - `_paint_stroke(t: Vector2i) -> bool` - Held strokes need a held button and a mouse clear of the chrome: RMB erases (furniture included), LMB lays the current tool.
 - `_erase_tile(t: Vector2i) -> void` - The shared erase plus the furniture column: RMB clears everything the editor can author at this tile.
-- `_apply_tool(t: Vector2i) -> bool` - Lay one tool at the hover tile: solids and furniture refuse occupied ground, soil and ice lay one guarded subtile, liquids dose 255 through the tool path.
+- `_apply_tool(t: Vector2i) -> bool` - Lay one tool at the hover tile: solids and furniture refuse occupied ground, soil and wood_s lay one guarded subtile, liquids dose 255 through the tool path.
 - `_brush_guarded(pk: TilePacket, i: int, kind: int) -> bool` - The guarded subtile brush (the witch lab's soil verb, generalized): one subtile into the lowest empty slot when the budget takes it.
 - `_lay_furniture(pk: TilePacket, i: int, d: int) -> bool` - Furniture goes onto cleared ground only (AIR, empty pool) -- the _lay_solid rule mirrored; it keeps a pool so matter can reach it.
 - `_spawn_witch(t: Vector2i) -> void` - Spawn a new witch at tile t (feet at the tile's floor edge) -- every spawn is a fresh body; they all read the same keys and move as a chorus.

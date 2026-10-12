@@ -15,9 +15,9 @@ enum Mat { WATER, OIL, ACID, LAVA, SMOKE, STEAM }
 const MAT_COUNT := 6
 
 ## Ledger rows. The first six line up with Mat; the three subtile rows
-## follow in column order (stone_s, soil_s, ice_s) == SUB_SINK order; FUEL
+## follow in column order (stone_s, soil_s, wood_s) == SUB_SINK order; FUEL
 ## closes the book (appended, never inserted -- row indices are arithmetic).
-enum Led { WATER, OIL, ACID, LAVA, SMOKE, STEAM, STONE_S, SOIL_S, ICE_S, DAMP, FUEL }
+enum Led { WATER, OIL, ACID, LAVA, SMOKE, STEAM, STONE_S, SOIL_S, WOOD_S, DAMP, FUEL }
 const LED_COUNT := 11
 
 ## Debug furniture (the editor lab, world.md §3): sources and sinks as room markers -- live during play, authored outside the play area in finished rooms.
@@ -34,7 +34,7 @@ const DENSITY: Array[int] = [30, 20, 40, 50, 10, 5]
 const SORT_RATE: Array[int] = [2, 2, 1, 1, 3, 8]          # <tune>
 
 ## Loose-subtile buoyancy through liquid, subtile-steps per tick, indexed by
-## column order [stone_s, soil_s, ice_s]. Negative = floats (ice floats).
+## column order [stone_s, soil_s, wood_s]. Negative = floats (wood rests buoyant until the weights system).
 const SUB_SINK: Array[int] = [2, 1, -1]                   # <tune>
 
 ## Per-material viscosity: throughput cap on every flow move (units per tick, per rule application). 255 = unthrottled, water-fast. The cap never changes an equilibrium -- only the pace of arriving -- and never binds for water (pool bytes cap at 255).
@@ -55,7 +55,7 @@ const NIBBLE_MAX := 15     # 4-bit occupancy
 # subtile kinds for get_sub/set_sub -- column order matches SUB_SINK
 const K_STONE := 0
 const K_SOIL := 1
-const K_ICE := 2
+const K_WOOD := 2
 
 const DAMP_PER_SUB := 32   # damp capacity per soil subtile (ruling: 1:1 with water and steam)
 const WOOD_DAMP_CAP := 64   # a wood tile holds damp flat -- half a full soil tile (128); render-darkens past half
@@ -69,7 +69,7 @@ var h: int
 var terrain := PackedByteArray()
 var stone_s := PackedByteArray()
 var soil_s := PackedByteArray()
-var ice_s := PackedByteArray()
+var wood_s := PackedByteArray()
 
 var water := PackedByteArray()
 var oil := PackedByteArray()
@@ -98,7 +98,7 @@ func _init(p_w: int, p_h: int) -> void:
 	terrain.resize(n)
 	stone_s.resize(n)
 	soil_s.resize(n)
-	ice_s.resize(n)
+	wood_s.resize(n)
 	water.resize(n)
 	oil.resize(n)
 	acid.resize(n)
@@ -120,7 +120,7 @@ func clear() -> void:
 	terrain.fill(T.AIR)
 	stone_s.fill(0)
 	soil_s.fill(0)
-	ice_s.fill(0)
+	wood_s.fill(0)
 	water.fill(0)
 	oil.fill(0)
 	acid.fill(0)
@@ -165,12 +165,12 @@ func set_terrain(i: int, t: int) -> bool:
 	terrain[i] = t
 	return true   # capacity is derived; nothing else to maintain
 
-## Subtile nibble at tile i; kind: 0 stone_s, 1 soil_s, 2 ice_s (matches SUB_SINK order).
+## Subtile nibble at tile i; kind: 0 stone_s, 1 soil_s, 2 wood_s (matches SUB_SINK order).
 func get_sub(i: int, kind: int) -> int:
 	match kind:
 		0: return stone_s[i]
 		1: return soil_s[i]
-		_: return ice_s[i]
+		_: return wood_s[i]
 
 ## Set a nibble column, book the popcount delta; returns the capacity deficit created (ejecting that overflow is the flow engine's job, world §3).
 func set_sub(i: int, kind: int, n: int) -> int:
@@ -181,7 +181,7 @@ func set_sub(i: int, kind: int, n: int) -> int:
 	match kind:
 		0: stone_s[i] = n
 		1: soil_s[i] = n
-		2: ice_s[i] = n
+		2: wood_s[i] = n
 	_book(Led.STONE_S + kind, POPCOUNT[n] - POPCOUNT[old])
 	# post-write: stranded damp drains with booking -- sim paths pre-carry it out, so this only catches tool writes (erase, brush, clear)
 	var cap := damp_capacity(i)
@@ -196,7 +196,7 @@ func set_sub(i: int, kind: int, n: int) -> int:
 func solid_capacity(i: int) -> int:
 	if FULL_SOLID[terrain[i]]:
 		return 0
-	return maxi(0, POOL_MAX - SUB_DISPLACE * (POPCOUNT[stone_s[i]] + POPCOUNT[soil_s[i]] + POPCOUNT[ice_s[i]]))
+	return maxi(0, POOL_MAX - SUB_DISPLACE * (POPCOUNT[stone_s[i]] + POPCOUNT[soil_s[i]] + POPCOUNT[wood_s[i]]))
 
 ## Full-solid terrain = 0, otherwise the solid capacity minus the actor claim -- the bridge's ejection target (world.md §4).
 func pool_capacity(i: int) -> int:
@@ -307,7 +307,7 @@ func mat_total(m: int) -> int:
 			for v in steam: sum += v
 	return sum
 
-## Fresh popcount recount of one subtile column (kind: K_STONE/K_SOIL/K_ICE) -- the mass checksum.
+## Fresh popcount recount of one subtile column (kind: K_STONE/K_SOIL/K_WOOD) -- the mass checksum.
 func sub_total(kind: int) -> int:
 	var sum := 0
 	match kind:
@@ -316,7 +316,7 @@ func sub_total(kind: int) -> int:
 		K_SOIL:
 			for v in soil_s: sum += POPCOUNT[v]
 		_:
-			for v in ice_s: sum += POPCOUNT[v]
+			for v in wood_s: sum += POPCOUNT[v]
 	return sum
 
 ## Double-entry check: booked totals vs fresh recounts, plus the per-tile pool constraint. Called at the end of every tick.
@@ -331,16 +331,16 @@ func assert_all() -> bool:
 	for v in stone_s: s_stone += POPCOUNT[v]
 	var s_soil := 0
 	for v in soil_s: s_soil += POPCOUNT[v]
-	var s_ice := 0
-	for v in ice_s: s_ice += POPCOUNT[v]
+	var s_wood := 0
+	for v in wood_s: s_wood += POPCOUNT[v]
 	if s_stone != _booked[Led.STONE_S]:
 		push_error("ledger drift STONE_S: booked %d, counted %d" % [_booked[Led.STONE_S], s_stone])
 		ok = false
 	if s_soil != _booked[Led.SOIL_S]:
 		push_error("ledger drift SOIL_S: booked %d, counted %d" % [_booked[Led.SOIL_S], s_soil])
 		ok = false
-	if s_ice != _booked[Led.ICE_S]:
-		push_error("ledger drift ICE_S: booked %d, counted %d" % [_booked[Led.ICE_S], s_ice])
+	if s_wood != _booked[Led.WOOD_S]:
+		push_error("ledger drift WOOD_S: booked %d, counted %d" % [_booked[Led.WOOD_S], s_wood])
 		ok = false
 	var s_fuel := 0
 	for v in fuel: s_fuel += v
@@ -353,7 +353,7 @@ func assert_all() -> bool:
 		ok = false
 	for i in w * h:
 		# the four subtile cells are a shared budget across solid kinds -- two kinds may never claim one cell; fire bits ride above it, overlay by design
-		var overlap := POPCOUNT[stone_s[i]] + POPCOUNT[soil_s[i]] + POPCOUNT[ice_s[i]] - POPCOUNT[stone_s[i] | soil_s[i] | ice_s[i]]
+		var overlap := POPCOUNT[stone_s[i]] + POPCOUNT[soil_s[i]] + POPCOUNT[wood_s[i]] - POPCOUNT[stone_s[i] | soil_s[i] | wood_s[i]]
 		if overlap != 0:
 			var q := xy_of(i)
 			push_error("subtile overlap at %d,%d" % [q.x, q.y])
@@ -563,7 +563,7 @@ func column(i: int) -> PackedByteArray:
 		0: return terrain
 		1: return stone_s
 		2: return soil_s
-		3: return ice_s
+		3: return wood_s
 		4: return water
 		5: return oil
 		6: return acid
@@ -582,7 +582,7 @@ func load_column(i: int, b: PackedByteArray) -> void:
 		0: terrain = b
 		1: stone_s = b
 		2: soil_s = b
-		3: ice_s = b
+		3: wood_s = b
 		4: water = b
 		5: oil = b
 		6: acid = b
