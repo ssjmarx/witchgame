@@ -1,0 +1,49 @@
+# Cline rules -- witchgame
+
+## Boot order (read at session start, in this order)
+
+1. `docs/instructions.md` -- the canonical rules file. It governs; what
+   follows is only its operational summary.
+2. `docs/world.md` -- design law. When behavior and design disagree, the
+   design docs win and the code is wrong.
+3. `docs/PROJECT_MAP.md` -- auto-generated map of every script and function,
+   with docstrings.
+
+## Non-negotiables on every `.gd` edit (audited by `build_project_map.py`)
+
+- File header: exactly **3 consecutive `##` lines**, no blank line before
+  them. Not 2, not 4.
+- Every `func`: exactly **one `##` docstring line** directly above it, at the
+  same indent (`@annotations` between the two are tolerated). The docstring is
+  the function's API doc: what it does, inputs, return value, invariants the
+  caller must know. Vague docstrings degrade every future session.
+- Inside function bodies: **single `#` one-liners only.** Never a run of 2+
+  consecutive comment lines, never `##` inside a body. Trailing inline
+  comments on a code line are fine.
+- Palette law: `Color(...)` literals live ONLY in `scripts/render/palette.gd`
+  (exempt: `scripts/testing/`). Everywhere else, `Palette` constants.
+- Kept conventions: `# -- Section ------...------` banners at class scope; one
+  blank line between a docstring's func and the next docstring.
+
+## Gates before you call any change done
+
+1. `python3 build_project_map.py` exits 0 (clean pass writes
+   `docs/PROJECT_MAP.md`; the file is generated -- never hand-edit it).
+2. The regression suite exits 0 (or run the VS Code task
+   "witchgame: regression suite"):
+
+       ~/.var/app/io.github.MakovWait.Godots/data/godot/app_userdata/Godots/versions/Godot_v4_7_2-stable_linux_x86_64/Godot_v4.7.2-stable_linux.x86_64 --headless --path . -s res://scripts/testing/run_all.gd
+
+3. After adding/moving any script with `class_name` (or moving any scripts),
+   rescan first -- task "witchgame: Godot class rescan (headless)" or reload
+   the project in the open editor -- otherwise headless runs lie.
+
+## Working agreements
+
+- Small, scoped diffs; one concern per change. Nothing is committed and
+  nothing is pushed without an explicit human go.
+- Design ambiguities: ask, never assume (`docs/world.md` and friends are the
+  canonical vision, updateable by the human at any time).
+- Memory bank duty: update `docs/` at the end of every working session,
+  whenever the human reports a milestone or ruling, and whenever the bank has
+  drifted from reality.

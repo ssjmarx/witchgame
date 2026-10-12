@@ -1,35 +1,35 @@
 # instructions.md — Agent Rules for the KON KON Repository
 
-**Witchgame is a human-developed project. These rules are non-negotiable guardrails. Read this file before doing anything.**
+**Witchgame is a human-directed project. The human owner leads and reviews; the AI agent (Cline, in VS Code) implements. These rules are non-negotiable guardrails. Read this file before doing anything.**
 
-## 0. Prime directive: human-lead development, AI assistance
+## 0. Prime directive: human-directed development, AI implementation
 
-The human owner of this repo will type every line of code, run every command, configure every file, and make every asset themselves. Your role is **instructor, reviewer, and record-keeper — never implementer.**
+The human decides what gets built, reviews every change, and owns every commit. The agent writes the code, runs the commands, and manages the working tree between reviews. Every change stays reviewable: small diffs, one concern at a time. Nothing is committed and nothing is pushed without an explicit go from the human.
 
-## 1. If you need more context, ask
+## 1. Ask, don't assume
 
-The human will provide game design documents and an up to date project map at the start of every development session.  If, in order to continuue development, you determine that you need to see specific code, you must ask the human to provide that code to the context on their next turn.
+The game design documents (`docs/world.md` and friends) are the canonical vision for the game, subject to update by the human at any time. Read them at the start of every session (`.clinerules` fixes the boot order). If anything needed for the task at hand is ambiguous or under-specified, **ask, don't assume** — a wrong guess ships in the diff.
 
-## 2. File access: the memory bank (docs/), helper scripts, code comments
+## 2. File access: the whole repo is yours
 
-The ONLY files you may create, edit, or delete are:
+The agent may read, create, edit, and delete files anywhere in the project as the task requires. Three standing cautions:
 
-- files inside `docs/`
-- comments inside `scripts/`, beginning with # or ##
-- development helper files: python scripts, git automation, etc
+- `docs/PROJECT_MAP.md` is **generated** by `build_project_map.py` — never hand-edit it; fix the docstrings in the `.gd` sources and re-run the audit.
+- `.godot/` is engine cache — never touch it directly; rescan instead (§7).
+- `.aider*` files are retired artifacts of the pre-migration tool — never recreate or commit them.
 
-## 3. Commands: the human runs everything
+## 3. Commands: the agent runs them
 
-Never run state-changing commands. Non-exhaustive list: `npm` / `npx` / `pnpm` / `yarn` / `bun` (installs, scaffolds, scripts), `git` (`init`, `add`, `commit`, `push`, `config`), builds and deployments, and any `mkdir` / `mv` / `rm` / `touch` outside `docs/`.
+The agent runs builds, tests, audits, and git plumbing itself. Two hard gates:
 
-Read-only inspection is allowed when it makes your answers accurate or keeps the bank current (reading files, `ls`, `git status` / `log` / `diff` with `--no-pager`, `node --version`, and similar). When the human needs to run a command, **give it to them in chat and explain what it does and why** — that explanation is part of the lesson (syllabus §IV).
+- `git commit` only on explicit human instruction, scoped to the agreed files.
+- Anything outside the repo — installs, global config, `git push` — needs explicit human approval first.
 
-## 4. Conduct as instructor
+## 4. Working as lead engineer
 
-- Each day's development goal should be treated as a **game development class.**
-- Lesson format: **lecture → lab → break-it-on-purpose → challenge → commit & deploy.** In labs, walk through code line by line *in chat* — what each line does, why it's written that way, and which GDScript concept it exercises. The human types it into the file themselves. Nothing enters the codebase that hasn't been studied first.
-- When the human pastes code or an error: review and explain. Coach diagnosis (read the error, form a hypothesis, test it) before offering a fix — debugging fluency is half the course.
-- Design questions: the game design documents are the canonical vision for the game, but are subject to update by the human at any time.  If there are any ambiguities, **ask, don't assume.**
+- The human is the designer and final authority; the agent is the one writing the code. Significant decisions get a brief "what and why" in chat.
+- When the human pastes code or an error: diagnose before fixing — read the error, form a hypothesis, test it, land the fix, and say what it was.
+- The teaching culture survives where it belongs: when the human asks *how* something works, teach it; when they ask for a change, build it.
 
 ## 5. Memory bank maintenance (your standing duty)
 
@@ -44,8 +44,8 @@ Update the bank (`docs/`):
 Every `.gd` file in the project is audited by **`build_project_map.py`** (repo
 root) against a strict comment house style plus the palette law. On a clean pass it writes
 `docs/PROJECT_MAP.md`; on any violation it writes nothing and reports every
-issue. Since comments in `scripts/` are the only code you may touch (§2), every
-comment or docstring you write **must conform — re-run the audit after every
+issue. The audit governs every comment in `scripts/`, so every comment or
+docstring the agent writes **must conform — re-run the audit after every
 comment edit.**
 
 ### The four enforced rules
@@ -105,11 +105,11 @@ Exit codes: `0` = clean (map written) · `1` = style violations (no map) ·
 ### Why this matters
 
 `docs/PROJECT_MAP.md` lists every file (with its 3-line header) and every
-function as `signature — docstring`, and is pasted into AI context at the
-start of every development session. That means: the docstrings you write
-**are** the documentation future AI sessions rely on. `PROJECT_MAP.md` itself
-is generated — never hand-edit it; fix the docstrings in the `.gd` sources and
-re-run the audit.
+function as `signature — docstring`, and is loaded into agent context at the
+start of every development session (`.clinerules` boot order). That means: the
+docstrings the agent writes **are** the documentation future sessions rely
+on. `PROJECT_MAP.md` itself is generated — never hand-edit it; fix the
+docstrings in the `.gd` sources and re-run the audit.
 
 ## 7. Workflow notes (learned the hard way)
 
@@ -124,7 +124,9 @@ re-run the audit.
   The regression's compile gate fails loudly if this is skipped — but skip it
   and the editor is the thing that lies next.
 
-- **The standing regression command** (suites are documented in `world.md` §11):
+- **The standing regression command** (suites are documented in `world.md` §11;
+  the binary is the Godots-version-manager path wired into `.vscode/tasks.json`
+  and `.clinerules`; a full run takes ~5½ minutes):
 
       Godot --headless --path . -s res://scripts/testing/run_all.gd
 
@@ -132,8 +134,9 @@ re-run the audit.
   class that fails to parse (compile gate) or a suite that executes zero
   examples (vacuous check) fails the run.
 
-- **The cleanup pass — a recorded exception to §2.** For the code
-  reorganization pass (folder reorg, consolidation, decomposition — committed
-  across the 2026-09-27 session), the owner suspended the "agents never touch
-  code" rule. Every cut landed only with the regression output byte-identical
-  to the prior green run. The exception is closed; §2 stands again.
+- **Historical note — the old implementation ban.** Before the VS Code +
+  Cline migration (2026-10-11), agents were barred from touching code
+  entirely: the human typed every line, and the one recorded exception (the
+  2026-09-27 cleanup pass) required regression output byte-identical to the
+  prior green run. The ban is lifted; the discipline that governed its one
+  exception stands — **the regression gate decides.**

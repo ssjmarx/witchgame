@@ -1,0 +1,109 @@
+{
+    "version": "2.0.0",
+    // Godot 4.7.2 binary, installed via the Godots version manager (Flatpak).
+    // ${env:HOME} keeps this file portable across machines/username changes.
+    "tasks": [
+        {
+            "label": "witchgame: regression suite",
+            "detail": "Headless run of every suite (scripts/testing/run_all.gd). Exit 0 = all green.",
+            "type": "shell",
+            "command": "${env:HOME}/.var/app/io.github.MakovWait.Godots/data/godot/app_userdata/Godots/versions/Godot_v4_7_2-stable_linux_x86_64/Godot_v4.7.2-stable_linux.x86_64",
+            "args": [
+                "--headless",
+                "--path",
+                "${workspaceFolder}",
+                "-s",
+                "res://scripts/testing/run_all.gd"
+            ],
+            "group": {
+                "kind": "test",
+                "isDefault": true
+            },
+            "presentation": {
+                "reveal": "always",
+                "panel": "dedicated",
+                "clear": true,
+                "showReuseMessage": false
+            },
+            "problemMatcher": []
+        },
+        {
+            "label": "witchgame: Godot class rescan (headless)",
+            "detail": "Regenerate the class cache after adding/moving scripts with class_name. Run before headless suites or they lie.",
+            "type": "shell",
+            "command": "${env:HOME}/.var/app/io.github.MakovWait.Godots/data/godot/app_userdata/Godots/versions/Godot_v4_7_2-stable_linux_x86_64/Godot_v4.7.2-stable_linux.x86_64",
+            "args": [
+                "--headless",
+                "--editor",
+                "--quit",
+                "--path",
+                "${workspaceFolder}"
+            ],
+            "presentation": {
+                "reveal": "always",
+                "panel": "dedicated",
+                "clear": true,
+                "showReuseMessage": false
+            },
+            "problemMatcher": []
+        },
+        {
+            "label": "witchgame: audit comments + rebuild project map",
+            "detail": "build_project_map.py: exit 0 = clean (writes docs/PROJECT_MAP.md); exit 1 = style violations (no map).",
+            "type": "shell",
+            "command": "python3",
+            "args": [
+                "build_project_map.py"
+            ],
+            "options": {
+                "cwd": "${workspaceFolder}"
+            },
+            "group": {
+                "kind": "build",
+                "isDefault": true
+            },
+            "presentation": {
+                "reveal": "always",
+                "panel": "dedicated",
+                "clear": true,
+                "showReuseMessage": false
+            },
+            "problemMatcher": []
+        },
+        {
+            "label": "witchgame: project map (--force write)",
+            "detail": "Write docs/PROJECT_MAP.md even if style violations remain (the audit still reports every issue).",
+            "type": "shell",
+            "command": "python3",
+            "args": [
+                "build_project_map.py",
+                "--force"
+            ],
+            "options": {
+                "cwd": "${workspaceFolder}"
+            },
+            "presentation": {
+                "reveal": "always",
+                "panel": "dedicated",
+                "clear": true,
+                "showReuseMessage": false
+            },
+            "problemMatcher": []
+        },
+        {
+            "label": "witchgame: run game",
+            "detail": "Launch the game in a window, no debugger. For debugging use a launch configuration instead.",
+            "type": "shell",
+            "command": "${env:HOME}/.var/app/io.github.MakovWait.Godots/data/godot/app_userdata/Godots/versions/Godot_v4_7_2-stable_linux_x86_64/Godot_v4.7.2-stable_linux.x86_64",
+            "args": [
+                "--path",
+                "${workspaceFolder}"
+            ],
+            "presentation": {
+                "reveal": "always",
+                "panel": "dedicated"
+            },
+            "problemMatcher": []
+        }
+    ]
+}

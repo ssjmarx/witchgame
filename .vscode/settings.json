@@ -1,0 +1,47 @@
+{
+    // ------------------------------------------------------------------
+    // Godot Tools (geequlim.godot-tools)
+    // ------------------------------------------------------------------
+    // Machine-specific: absolute path to the Godot 4 editor binary from the
+    // Godots version manager (Flatpak). Powers the GDScript language server,
+    // hover docs, and run-in-editor. This is the ONLY line to change when
+    // Godot moves or on another machine. The project must be open in the
+    // Godot editor for the language server (default port 6005) to respond.
+    "godotTools.editorPath.godot4": "/home/ssjmarx/.var/app/io.github.MakovWait.Godots/data/godot/app_userdata/Godots/versions/Godot_v4_7_2-stable_linux_x86_64/Godot_v4.7.2-stable_linux.x86_64",
+
+    // ------------------------------------------------------------------
+    // Workspace hygiene: engine cache and retired-Aider artifacts
+    // ------------------------------------------------------------------
+    "files.exclude": {
+        "**/.godot": true,
+        "**/.aider*": true
+    },
+    "search.exclude": {
+        "**/.godot": true,
+        "**/.aider*": true,
+        "**/*.uid": true
+    },
+
+    // ------------------------------------------------------------------
+    // Godot's ini-style text formats: get basic syntax highlighting
+    // ------------------------------------------------------------------
+    "files.associations": {
+        "*.tscn": "ini",
+        "*.tres": "ini",
+        "*.godot": "ini",
+        "*.import": "ini",
+        "*.cfg": "ini"
+    },
+
+    // ------------------------------------------------------------------
+    // GDScript: tabs, by house convention. NO format-on-save -- comment
+    // style is governed by the docstring linter (build_project_map.py)
+    // and external formatters would fight it.
+    // ------------------------------------------------------------------
+    "[gdscript]": {
+        "editor.insertSpaces": false,
+        "editor.tabSize": 4,
+        "editor.detectIndentation": false,
+        "editor.formatOnSave": false
+    }
+}

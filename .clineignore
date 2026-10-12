@@ -1,0 +1,14 @@
+# Engine cache / generated artifacts -- never useful as context
+.godot/
+
+# Retired Aider artifacts
+.aider*
+
+# Git internals (inspect history with git commands instead)
+.git/
+
+# Binary assets -- not meaningful as text context
+assets/
+*.png
+*.aseprite
+*.import

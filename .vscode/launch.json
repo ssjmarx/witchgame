@@ -1,0 +1,23 @@
+{
+    "version": "0.2.0",
+    // Provided by Godot Tools (type: "godot"). Resolves the binary from the
+    // godotTools.editorPath.godot4 setting in settings.json. Open the project
+    // in the Godot editor at least once per session so the language server
+    // (port 6005) is up for full IntelliSense alongside the debug session.
+    "configurations": [
+        {
+            "name": "witchgame: play project",
+            "type": "godot",
+            "request": "launch",
+            "project": "${workspaceFolder}",
+            "scene": "main"
+        },
+        {
+            "name": "witchgame: play current scene",
+            "type": "godot",
+            "request": "launch",
+            "project": "${workspaceFolder}",
+            "scene": "current"
+        }
+    ]
+}
