@@ -25,7 +25,8 @@
 
     Her swim becomes buoyancy (world §3): no more infinite stroke-jumping — she floats to the top, rests with her bottom half submerged, and a stroke from the surface buys exactly 10px above the water top (the SACRED jump, kept through water). Walking the bottom wants ballast — the future grab mechanic's job, and the weight-4 turtle is its first customer (ruling pending)
     Cold is cut: no ice, no freeze/thaw, no underfoot melt. The turtle loses its COLD aura — re-theme pending; its landed state (heavy riser, pressure plates) unchanged
-    Her dungeon is matter now (the bedrock lab): wood and stone terrain retire into structures — C3's aqueduct burns as a wood_s structure and collapses by the compromiserule, C5's far wall is a wood_s wall that must be bone-dry to catch, and C2's fizzle grind survives as wood_s moisture. A chipped wall admits water: acid digs, water follows
+    Her dungeon is matter now (the bedrock lab): wood and stone terrain retire into structures — C3's aqueduct burns as a wood_s structure and collapses by the compromise rule (world §3: an unsupported piece falls as a unit), C5's far wall is a wood_s wall that must be bone-dry to catch, and C2's fizzle grind survives as wood_s moisture. A chipped wall admits water: acid digs, water follows
+    Structure pickup rides her lasso (world §3's movement doctrine): the lasso is universal — enemies, pots, and structures are one grasp set, one thing at a time — and a structure within her weight cap lassos like anything else, rotates in 90° increments while carried, and is tossed or placed back into the CA. Bridge-building with tetris blocks; the shard-actor pattern's second customer (rotation binding pending). C3's aqueduct, C5's wall, and every fallen beam afterward are hers to re-lay
     Smolder is hers now: the 4 s timer lives actor-side (the beam lab owns it; world §4.4 superseded) — the CA keeps only the steam and the fuel
     C3's rain authors with the shipped furniture (sources and drains) until/unless a rain system returns with world's boundary flux
 
@@ -77,7 +78,7 @@ Inherited from world §1 in full: Godot 4.5, 240×240 / 720×720, integer scalin
 | Move | L-stick | A/D | waddle 80 px/s (5 t/s) |
 | Aim | R-stick: vector off **sprite center**, direction + length = deflection | mouse position (anchor: sprite center) | one input steers aim AND beam, both schemes |
 | Beam | stick deflection past threshold | mouse past distance threshold from **sprite center** | transition anim: lantern dims, beam blooms; live on the last frame. Pad: fixed speed; mouse: tracks distance |
-| Lasso / throw / drop | X | LMB | no windup — her cast is instant. Near-feet aim = gentle drop |
+| Lasso / throw / drop | X | LMB | no windup — her cast is instant. Near-feet aim = gentle drop. Structures join the grasp at the matter arc (world §3) |
 | Jump | A | Space | fixed 10px, no variable height |
 | Place staff | B | E | toggle near planted staff to re-grab |
 | Ignite | Y | RMB | short range, infinite |
@@ -158,7 +159,7 @@ TRAIL = 5 s                       # her breadcrumb extension of the engine ring
 
 ## 6. Lasso + enemies
 
-The core is identical for both girls (world §7): IDLE → FIRE_TIP (straight, 7 tiles, loose rope render) → SNATCH (0.15 s, auto-reel) → CARRIED, one at a time, water-cast included — the tip refracts and slows, the preview bends at the surface line, depth reads on sight, underwater enemies are fishable. Gentle drop ≤1.5 tiles: placed docile, exactly where put.
+The core is identical for both girls (world §7): IDLE → FIRE_TIP (straight, 7 tiles, loose rope render) → SNATCH (0.15 s, auto-reel) → CARRIED, one at a time, water-cast included — the tip refracts and slows, the preview bends at the surface line, depth reads on sight, underwater enemies are fishable. Gentle drop ≤1.5 tiles: placed docile, exactly where put. Structures join the grasp set at the matter arc (world §3, planned): a structure within her weight cap snatches, carries, and returns to the CA on the throw or the drop — rotated in 90° increments while carried (binding pending), a tossed structure arcing as a rigid body and settling where it lands. One thing at a time becomes the bridge-builder's grammar: snatch the plank, turn it, lay it down.
 
 **Her deltas are modules and frame data:** no windup (her cast is instant — the magical girl's 0.2 s windup is hers, not shared), and the tip is a tool beyond catching — **levers** flip from range, **pots** yank to hands, **swing rings** catch the tip and pendulum (release = tangential launch — feels like a bad idea; correct). Her thrown enemies run the gravity-arc module plus their per-enemy landed power.
 
