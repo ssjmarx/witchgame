@@ -14,6 +14,13 @@
 - **Her dungeon sets are code**: four ambience banks — whisper blue, brick crypt, moss grotto, sandstone catacomb — recolor the same cave backdrop; a backdrop's identity is (room seed, set), so every chamber of her map can carry its own dark deterministically
 - **The room editor is her map's seed** (`test_editor.tscn`): four persistent rooms, paint over tiles and debug furniture (water sources, drains, steam vents, open air), an inspector card, a witch chorus sharing one input — her seven chambers author into this, and the save bytes are the level format's first real artifact (world §10)
 
+**Changelog v3.4 — the pace retune (code truth banked; no lab)**
+
+- **WALK is 80 px/s (5 t/s)** — witch.gd has said 80 since the bridge lab; the doc's 40 was drift, and the bank follows the code (world §0 law 10). Horizontal jump reach doubles (~2 tiles at the SACRED arc); C0's 16px ledge joke is vertical and survives
+- **PANIC_RUN retired: panic steers, never speeds.** The flee runs at WALK — the
+  pressure is the clock, the ratchet, and the forced direction. C2's panic-run
+  geometry retimes at M4 with both retunes in hand
+
 **Changelog v3.3 — the matter arc rulings (design-ahead-of-code; world v1.8 §3)**
 
     Her swim becomes buoyancy (world §3): no more infinite stroke-jumping — she floats to the top, rests with her bottom half submerged, and a stroke from the surface buys exactly 10px above the water top (the SACRED jump, kept through water). Walking the bottom wants ballast — the future grab mechanic's job, and the weight-4 turtle is its first customer (ruling pending)
@@ -67,7 +74,7 @@ Inherited from world §1 in full: Godot 4.5, 240×240 / 720×720, integer scalin
 
 | Verb | Pad | KBM | Notes |
 |---|---|---|---|
-| Move | L-stick | A/D | waddle 40 px/s (2.5 t/s) |
+| Move | L-stick | A/D | waddle 80 px/s (5 t/s) |
 | Aim | R-stick: vector off **sprite center**, direction + length = deflection | mouse position (anchor: sprite center) | one input steers aim AND beam, both schemes |
 | Beam | stick deflection past threshold | mouse past distance threshold from **sprite center** | transition anim: lantern dims, beam blooms; live on the last frame. Pad: fixed speed; mouse: tracks distance |
 | Lasso / throw / drop | X | LMB | no windup — her cast is instant. Near-feet aim = gentle drop |
@@ -106,7 +113,7 @@ Her state reads, no meters anywhere:
 
 ## 5. The Witch
 
-16×32. Waddle 40 px/s. Panic run 70 px/s (4.4 t/s — the number that was always true; v2.1's C5 misuse of it is corrected below).
+16×32. Waddle 80 px/s (5 t/s — code truth banked; the doc's 40 was drift). Panic runs at WALK: panic steers her flight, never her speed.
 
 ```
 GRAVITY = 480                     # inherited
@@ -114,7 +121,7 @@ JUMP_V  = 98                      # 10px exactly — SACRED, shared legs
 SWIM_GRAV = 120                   # <retime at the buoyancy lab>
 PANIC_MAX = 5.0                   # accrued panic → KO
 HIT_PANIC = 1.0                   # forced panic per hit
-PANIC_RUN = 70 px/s
+PANIC_RUN = WALK
 RECOVERY = 0.75 s                 # <tune> — the vulnerable calm
 PANIC_DRAIN = 1×                  # calm erases panic 1:1
 FIRE_PANIC = 1× dry · ½× while wetness > 0
@@ -129,7 +136,7 @@ TRAIL = 5 s                       # her breadcrumb extension of the engine ring
 
 - **Hits** — enemy contact, spike tops, eel shock — knock her back, flash her hot (P1 row), and force panic: 1 s per hit, breadcrumbs reversed, away from what hit her. Panic accrues the clock 1:1 while she's in it
 - **Fire contact** pushes the clock at **1× dry, ½× while her wetness > 0** — the steam budget. A saturated witch has ~5 s of fire in her at the shipped 1:1 body (64 wetness against ~12 wetness/s under flame — cross-talk 8, drip 4; the old ~10 s was priced on the retired 254 meter); a dry one has 5. When the hiss stops, the clock doubles
-- **Panic behaviors:** release capture, drop carried pots, flee the breadcrumb trail at 70 px/s
+- **Panic behaviors:** release capture, drop carried pots, flee the breadcrumb trail at WALK
 - **Panic ends:** still touching fire → **CRISP** (fire death, same presentation family as KO). Otherwise → **recovery frames**: 0.75 s, a brief getting-herself-together animation, clock frozen. A hit or fire during recovery resumes panic *from the frozen value* — the ratchet. Chained pressure is how she dies, never a single mistake
 - **After recovery**, the clock drains at 1×. The dungeon wants her calm
 - **KO at 5:** slump, blinky eyes, 1.5 s — a non-event, same family as CRISP. Room to baseline, respawn at the door she entered from, one life spent, placed tag burned
@@ -253,7 +260,7 @@ One `LevelSpec`, seven `RoomSpec`s. No pockets authored in the demo — bottomle
 
 **C4 — "GARDEN CORE" (x 62–79).** The chain, drizzle edition: ignite the brazier by the puddle → steam rises and spreads along the cold ceiling → condenses as slow drizzle → the incline funnels it to the soil patch → the damp front creeps down, visibly → plant the staff, aim the beam up the wall → steerable moss trellis, one tile per four seconds, blips telegraphing the target → climb her garden. The turtle as a mobile condenser plate remains the alternate solve.
 
-**C5 — "THE LENS" (x 80–95) — the garden's dark twin.** A long room, open-framed on the beam axis (the stone-frame signal: this room continues). A growth anchor mid-room, in the growth band from the naive stance. The far wall is wood, floor to ceiling — and the beam doesn't stop at what you're pointing at. The player gardens; the beam overruns; the smolder starts on the far wall; the surprise lands mid-growth. Four solves, all authored in: **angle** — a stone beam dump catches the overrun (new level vocabulary); **damp** — the wick rule, a water pot between plant and wall, doubling as the mid-failure rescue (fire ~1 tile/s against her calm 2.5 t/s waddle — she outwalks it); **berm** — pile soil to shade the line; **stance** — sub-10 is safe: walk toward the danger; a spike moat justifies the distance. Fuse (4 s smolder) < grow time (4 s per tile): the first attempt fails by surprise, the retry fails by timer, only a solution completes. A fuel path runs from wall to growth site. Telegraphs: the smolder animation and sound, plus authored scorch on the far wall in the baseline — this wall has burned before. No tag lesson here; papering the far wall is the trap, not the teach — though now the smolder warning fires on the tag too, and the trap at least *hisses*.
+**C5 — "THE LENS" (x 80–95) — the garden's dark twin.** A long room, open-framed on the beam axis (the stone-frame signal: this room continues). A growth anchor mid-room, in the growth band from the naive stance. The far wall is wood, floor to ceiling — and the beam doesn't stop at what you're pointing at. The player gardens; the beam overruns; the smolder starts on the far wall; the surprise lands mid-growth. Four solves, all authored in: **angle** — a stone beam dump catches the overrun (new level vocabulary); **damp** — the wick rule, a water pot between plant and wall, doubling as the mid-failure rescue (fire ~1 tile/s against her calm 5 t/s waddle — she outwalks it); **berm** — pile soil to shade the line; **stance** — sub-10 is safe: walk toward the danger; a spike moat justifies the distance. Fuse (4 s smolder) < grow time (4 s per tile): the first attempt fails by surprise, the retry fails by timer, only a solution completes. A fuel path runs from wall to growth site. Telegraphs: the smolder animation and sound, plus authored scorch on the far wall in the baseline — this wall has burned before. No tag lesson here; papering the far wall is the trap, not the teach — though now the smolder warning fires on the tag too, and the trap at least *hisses*.
 
 **C6 — "THE HOOK" (x 96–111).** The finale, plus the countermeasure: a waterfall spawns above the room and drains below it — never accumulating, never flooding — across the sightline to the burnable wooden door. A wall of moving water the lens cannot pass; the firebomb remains the solve. The pot survives the flight (not sim fire until it breaks) but must land on dry stone — an empty pot thrown through the waterfall arrives full and breaks wet where it lands, which is its own lesson. Behind the door: the vine curtain (burn it or slime-smother the wisp), the secret alcove the plumb bob has leaned toward since the entrance — **an extra life lives in it** — the pressure plate (weight 2 — two slimes, or the turtle smuggled from C3), and the tag: burn the door, tag the room, and walk out through a hole you made and notarized. Final frame: a big sealed door, unmistakably the shape of C0's entrance. Fade. Demo over.
 
@@ -283,7 +290,7 @@ Engine stages E0–E5 are world.md's; E5 ships in two cuts — ambient+omni earl
 ## 13. Tuning constants (game-side; engine constants live in world §13)
 
 ```
-WALK = 40 px/s (2.5 t/s) · PANIC_RUN = 70 px/s (4.4 t/s)
+WALK = 80 px/s (5 t/s) · PANIC_RUN = WALK
 JUMP_HEIGHT = 10 (SACRED, shared) · RISER = 8 (SACRED)
 PANIC_MAX = 5.0 · HIT_PANIC = 1.0 · RECOVERY = 0.75 s <tune>
 PANIC_DRAIN = 1× · FIRE_PANIC = 1× dry · ½× while wetness > 0
