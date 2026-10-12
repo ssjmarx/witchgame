@@ -1,4 +1,4 @@
-## A room's persistent census as value copies (world.md §8): fifteen packet
+## A room's persistent census as value copies (world.md §8): sixteen packet
 ## columns, the ignition overlay, both sweep-parity counters. Derived state
 ## is never stored -- every engine rebuilds it at its tick head.
 

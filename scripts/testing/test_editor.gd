@@ -11,7 +11,7 @@ const EDITOR_SEED_BASE := 11   # rooms 0-3 seed 11-14, clear of every suite's se
 const DEFAULT_ROOM := 11       # the fresh-slot carve: 11 wide keeps every U-shell write in bounds
 const AMBIENCE_NAMES := ["blue", "red", "green", "yellow"]
 
-enum Tool { STONE, WOOD, SOIL, WOOD_S, DAMP, WATER, OIL, ACID, LAVA, STEAM, SMOKE, SRC_WATER, DRAIN, SRC_STEAM, OPEN_AIR }
+enum Tool { STONE, WOOD, SOIL, WOOD_S, STRUCT, DAMP, WATER, OIL, ACID, LAVA, STEAM, SMOKE, SRC_WATER, DRAIN, SRC_STEAM, OPEN_AIR }
 
 var rooms: Array[Room] = []
 var renderers: Array[ElementRenderer] = []
@@ -137,12 +137,13 @@ func _paint_stroke(t: Vector2i) -> bool:
 		return true
 	return _apply_tool(t)
 
-## The shared erase plus the furniture column: RMB clears everything the editor can author at this tile.
+## The shared erase plus the furniture column: RMB clears everything the editor can author at this tile, then the observed room's structures re-partition.
 func _erase_tile(t: Vector2i) -> void:
 	super._erase_tile(t)
+	rooms[observed].sand.structures.repartition_around(t.x, t.y)
 	stone.packet.set_debug(stone.idx(t.x, t.y), TilePacket.DebugTile.NONE)
 
-## Lay one tool at the hover tile: solids and furniture refuse occupied ground, soil and wood_s lay one guarded subtile, liquids dose 255 through the tool path.
+## Lay one tool at the hover tile: solids and furniture refuse occupied ground, soil and wood_s lay one guarded subtile, the struct brush fuses the tile's matter, liquids dose 255 through the tool path.
 func _apply_tool(t: Vector2i) -> bool:
 	var pk := stone.packet
 	var i := stone.idx(t.x, t.y)
@@ -159,6 +160,8 @@ func _apply_tool(t: Vector2i) -> bool:
 			return _brush_guarded(pk, i, TilePacket.K_SOIL)
 		Tool.WOOD_S:
 			return _brush_guarded(pk, i, TilePacket.K_WOOD)
+		Tool.STRUCT:
+			return rooms[observed].sand.structures.fuse(t.x, t.y)
 		Tool.DAMP:
 			return pk.add_damp(i, 64) > 0
 		Tool.WATER:
@@ -253,6 +256,11 @@ func _read_slot(k: int) -> RoomState:
 	var s := RoomState.new()
 	for col in d["cols"]:
 		s.cols.append(col)
+	# pre-structure slots carry fifteen columns: membership arrives as a zero column, the byte-exact empty world
+	while s.cols.size() < TilePacket.COL_COUNT:
+		var fill := PackedByteArray()
+		fill.resize(rooms[k].width * rooms[k].height)
+		s.cols.append(fill)
 	s.ignition = d["ign"]
 	s.water_ticks = d["wt"]
 	s.sand_ticks = d["st"]
@@ -267,7 +275,7 @@ func _build_ui() -> void:
 	menu_bar.position = Vector2(2, 2)
 	ui.add_child(menu_bar)
 	panels = [
-		_build_panel(0, [["stone", Tool.STONE], ["wood", Tool.WOOD], ["soil", Tool.SOIL], ["wood_s", Tool.WOOD_S], ["damp", Tool.DAMP], ["water", Tool.WATER], ["oil", Tool.OIL], ["acid", Tool.ACID], ["lava", Tool.LAVA], ["steam", Tool.STEAM], ["smoke", Tool.SMOKE]]),
+		_build_panel(0, [["stone", Tool.STONE], ["wood", Tool.WOOD], ["soil", Tool.SOIL], ["wood_s", Tool.WOOD_S], ["struct", Tool.STRUCT], ["damp", Tool.DAMP], ["water", Tool.WATER], ["oil", Tool.OIL], ["acid", Tool.ACID], ["lava", Tool.LAVA], ["steam", Tool.STEAM], ["smoke", Tool.SMOKE]]),
 		_build_panel(1, [["water source", Tool.SRC_WATER], ["drain", Tool.DRAIN], ["steam vent", Tool.SRC_STEAM], ["open air", Tool.OPEN_AIR]]),
 	]
 	var tiles := _chrome_button("tiles")
@@ -362,7 +370,7 @@ func _update_inspector(t: Vector2i) -> void:
 	var pk := stone.packet
 	var i := stone.idx(t.x, t.y)
 	var txt := "TILE %d,%d  %s" % [t.x, t.y, GridStone.Terrain.keys()[pk.get_terrain(i)].to_lower()]
-	txt += "\nsub s%d d%d w%d  damp %d/%d  fuel %d  fire %d" % [pk.get_sub(i, TilePacket.K_STONE), pk.get_sub(i, TilePacket.K_SOIL), pk.get_sub(i, TilePacket.K_WOOD), pk.get_damp(i), pk.damp_capacity(i), pk.get_fuel(i), pk.get_fire(i)]
+	txt += "\nsub s%d d%d w%d  struct %d  damp %d/%d  fuel %d  fire %d" % [pk.get_sub(i, TilePacket.K_STONE), pk.get_sub(i, TilePacket.K_SOIL), pk.get_sub(i, TilePacket.K_WOOD), pk.struct_s[i], pk.get_damp(i), pk.damp_capacity(i), pk.get_fuel(i), pk.get_fire(i)]
 	txt += "\npool w%d o%d a%d l%d m%d v%d  free %d" % [pk.get_pool(i, TilePacket.Mat.WATER), pk.get_pool(i, TilePacket.Mat.OIL), pk.get_pool(i, TilePacket.Mat.ACID), pk.get_pool(i, TilePacket.Mat.LAVA), pk.get_pool(i, TilePacket.Mat.SMOKE), pk.get_pool(i, TilePacket.Mat.STEAM), pk.pool_free(i)]
 	txt += "\nflow %d %s  %s  furn %s" % [water.get_flow_mag(t.x, t.y), GridWater.FlowDir.keys()[water.get_flow_dir(t.x, t.y)].to_lower(), "sealed" if water.is_air_sealed(t.x, t.y) else "vented", TilePacket.DebugTile.keys()[pk.get_debug(i)].to_lower()]
 	inspect_label.text = txt

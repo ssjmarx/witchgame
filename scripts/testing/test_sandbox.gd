@@ -72,16 +72,21 @@ func _clear_world() -> void:
 func _paint_stroke(_t: Vector2i) -> bool:
 	return false
 
-## The shared RMB erase verb: clear the soil nibble, pool water, oil, gases, fuel, and fire at t, then the terrain -- labs that mirror colliders sync after.
+## The shared RMB erase verb: clear every subtile column, pool water, oil, gases, fuel, and fire at t, then the terrain, and re-partition any structure the cut touched (world §3) -- labs that mirror colliders sync after.
 func _erase_tile(t: Vector2i) -> void:
 	var i := stone.idx(t.x, t.y)
+	var fused: int = stone.packet.struct_s[i]
 	stone.packet.set_sub(i, TilePacket.K_SOIL, 0)
+	stone.packet.set_sub(i, TilePacket.K_STONE, 0)
+	stone.packet.set_sub(i, TilePacket.K_WOOD, 0)
 	water.set_water(t.x, t.y, 0)
 	for m in [TilePacket.Mat.OIL, TilePacket.Mat.STEAM, TilePacket.Mat.SMOKE]:
 		stone.packet.set_pool(i, m, 0)
 	stone.packet.set_fuel(i, 0)
 	stone.packet.set_fire(i, 0)
 	stone.set_terrain(t.x, t.y, GridStone.Terrain.AIR)
+	if fused != 0:
+		room.sand.structures.repartition_around(t.x, t.y)
 
 ## The shared LMB solid verb: lay stone or wood onto cleared ground only (AIR with an empty pool) -- wood arrives with a full fuel tank; true when the picture changed.
 func _lay_solid(t: Vector2i, terrain: int) -> bool:
@@ -149,7 +154,7 @@ func _hover_tile() -> Vector2i:
 		return Vector2i(-1, -1)
 	return t
 
-## Carve a diagram (s stone, w water 255, o oil 255, d soil 15, t soil 12, W wood + fuel 255, v steam 255, m smoke 255, . air) wrapped in a stone U-shell; returns its origin.
+## Carve a diagram (s stone, w water 255, o oil 255, d soil 15, t soil 12, W wood + fuel 255, r stone_s 15, H wood_s 15, v steam 255, m smoke 255, . air) wrapped in a stone U-shell; returns its origin.
 func _carve_preset(p_stone: GridStone, p_water: GridWater, rows: Array) -> Vector2i:
 	var first: String = rows[0]
 	var pw := first.length()
@@ -179,6 +184,10 @@ func _carve_preset(p_stone: GridStone, p_water: GridWater, rows: Array) -> Vecto
 				"W":
 					p_stone.set_terrain(ox + x, oy + y, GridStone.Terrain.WOOD)
 					p_stone.packet.set_fuel(i, 255)
+				"r":
+					p_stone.packet.set_sub(i, TilePacket.K_STONE, 15)
+				"H":
+					p_stone.packet.set_sub(i, TilePacket.K_WOOD, 15)
 				"v":
 					p_water.add_liquid(ox + x, oy + y, TilePacket.Mat.STEAM, 255)
 				"m":

@@ -33,6 +33,7 @@ var width: int
 var height: int
 
 var water: GridWater
+var structures: GridStructures
 
 var _sub := PackedByteArray()  # expanded w*2 x h*2 material codes, refilled each tick
 var tick_count := 0
@@ -48,6 +49,7 @@ func _init(w: int, h: int, terrain: GridStone, p_water: GridWater) -> void:
 	stone = terrain
 	pk = terrain.packet
 	water = p_water
+	structures = GridStructures.new(w, h, terrain)
 	_sub.resize(w * 2 * h * 2)
 	_flow_mag.resize(w * h)
 	_flow_best.resize(w * h)
@@ -57,7 +59,7 @@ func _init(w: int, h: int, terrain: GridStone, p_water: GridWater) -> void:
 func idx(x: int, y: int) -> int:
 	return y * width + x
 
-## Total loose-solid subtiles of one kind (K_STONE/K_SOIL/K_WOOD) in the field -- the mass checksum.
+## Total subtiles of one kind in the field, loose or fused -- the mass checksum.
 func total(kind: int) -> int:
 	return pk.sub_total(kind)
 
@@ -67,6 +69,7 @@ func clear() -> void:
 		pk.set_sub(i, TilePacket.K_STONE, 0)
 		pk.set_sub(i, TilePacket.K_SOIL, 0)
 		pk.set_sub(i, TilePacket.K_WOOD, 0)
+	structures.clear()
 	tick_count = 0
 	_sub.fill(0)
 
@@ -135,13 +138,18 @@ func _pass_all() -> void:
 			for sx in range(w2 - 1, -1, -1):
 				_sub_pass(sx, sy)
 
-## Apply fall / slide to one subtile; d is the medium-dependent rate -- FALL[kind] through air, SUB_SINK[kind] through liquid -- taken as gated single-cell sub-steps so a fast sinker cannot tunnel. d <= 0 (buoyant kinds) rests: rising is the float lab, not this one.
+## Apply fall / slide to one subtile; d is the medium-dependent rate -- FALL[kind] through air, SUB_SINK[kind] through liquid -- taken as gated single-cell sub-steps so a fast sinker cannot tunnel; a fused member returns early, rigid until its piece is cut (world §3). d <= 0 (buoyant kinds) rests: rising is the float lab, not this one.
 func _sub_pass(sx: int, sy: int) -> void:
 	var w2 := width * 2
 	var code := _sub[sy * w2 + sx]
 	if code == EMPTY:
 		return
 	var kind := code - 1
+	# authorship freezes: a membership bit sits the pass out, and soil never carries one
+	if pk.has_structures() and kind != TilePacket.K_SOIL:
+		var bit := (1 if (sy & 1) == 1 else 4) << (sx & 1)
+		if (pk.struct_s[idx(sx >> 1, sy >> 1)] & bit) != 0:
+			return
 	var d := FALL[kind] if not _in_liquid(sx, sy) else TilePacket.SUB_SINK[kind]
 	if d <= 0:
 		return

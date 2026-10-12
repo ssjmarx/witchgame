@@ -82,19 +82,21 @@ var tags := PackedByteArray()
 var fuel := PackedByteArray()    # burnable energy attached to solids -- outside the pool, own ledger row
 var fire_s := PackedByteArray()  # fire subtile bits -- overlay state: unbooked, displaces nothing
 var debug_s := PackedByteArray()  # debug furniture markers -- overlay state: unbooked, census column fifteen (the editor lab)
+var struct_s := PackedByteArray()  # structure membership nibble-pairs over the subtile layout -- overlay state: unbooked, census column sixteen (the bedrock lab); a set bit fuses that cell into an authored structure
 var actor_s := PackedByteArray()
 
 var _booked := PackedInt64Array()   # ledger: booked totals, one per row
 var _present := PackedInt32Array()   # per material: count of tiles holding nonzero units -- the absent-pass gate
 var _fire_present := 0   # tiles holding fire bits -- has_fire()'s gate (set_fire keeps it honest)
 var _debug_present := 0   # tiles carrying furniture -- has_debug()'s gate (set_debug keeps it honest)
+var _struct_present := 0   # tiles carrying membership -- has_structures()'s gate (set_struct and the cut invariant keep it honest)
 
 ## Allocate the w×h grid: every column resized, ledger zeroed.
 func _init(p_w: int, p_h: int) -> void:
 	w = p_w
 	h = p_h
 	var n := w * h
-	# Sixteen boring resizes, no clever loop: a packed array passed through a temporary may not resize the member. Boring is bulletproof.
+	# Seventeen boring resizes, no clever loop: a packed array passed through a temporary may not resize the member. Boring is bulletproof.
 	terrain.resize(n)
 	stone_s.resize(n)
 	soil_s.resize(n)
@@ -112,6 +114,7 @@ func _init(p_w: int, p_h: int) -> void:
 	fuel.resize(n)
 	fire_s.resize(n)
 	debug_s.resize(n)
+	struct_s.resize(n)
 	actor_s.resize(n)
 	clear()
 
@@ -134,8 +137,11 @@ func clear() -> void:
 	fuel.fill(0)
 	fire_s.fill(0)
 	debug_s.fill(0)
+	struct_s.fill(0)
 	actor_s.fill(0)
 	_fire_present = 0
+	_debug_present = 0
+	_struct_present = 0
 
 # -- Indexing ----------------------------------------------------------------
 
@@ -183,6 +189,13 @@ func set_sub(i: int, kind: int, n: int) -> int:
 		1: soil_s[i] = n
 		2: wood_s[i] = n
 	_book(Led.STONE_S + kind, POPCOUNT[n] - POPCOUNT[old])
+	# membership dies with its matter (world §3, the cut invariant) -- soil never carries membership, and a tile dropping its last bit drops the gate count
+	if kind != K_SOIL:
+		var dead := old & ~n
+		if dead != 0 and struct_s[i] != 0:
+			struct_s[i] &= ~dead
+			if struct_s[i] == 0:
+				_struct_present -= 1
 	# post-write: stranded damp drains with booking -- sim paths pre-carry it out, so this only catches tool writes (erase, brush, clear)
 	var cap := damp_capacity(i)
 	if damp[i] > cap:
@@ -552,10 +565,32 @@ func clear_fire() -> void:
 	fire_s.fill(0)
 	_fire_present = 0
 
+# -- Structure membership (the bedrock lab) -----------------------------------
+
+## Membership nibble at tile i -- fused structure bits over the subtile layout; overlay state, coexists with the matter columns, never booked.
+func get_struct(i: int) -> int:
+	return struct_s[i]
+
+## Set the membership nibble at tile i -- the structure engine's single writer, the set_fire pattern: keeps the present count honest, books nothing.
+func set_struct(i: int, n: int) -> void:
+	n = clampi(n, 0, NIBBLE_MAX)
+	var old := struct_s[i]
+	if old == n:
+		return
+	struct_s[i] = n
+	if old == 0:
+		_struct_present += 1
+	elif n == 0:
+		_struct_present -= 1
+
+## True when any tile carries membership -- the sand pass's fused-cell gate, _present's pattern.
+func has_structures() -> bool:
+	return _struct_present > 0
+
 # -- Snapshot census (world.md §8) ------------------------------------------
 
-## The persistent column count -- the snapshot census: terrain, three subtile nibbles, six pool, damp, tags, fuel, fire bits, debug furniture.
-const COL_COUNT := 15
+## The persistent column count -- the snapshot census: terrain, three subtile nibbles, six pool, damp, tags, fuel, fire bits, debug furniture, structure membership.
+const COL_COUNT := 16
 
 ## Live reference to persistent column i, census order (0..COL_COUNT-1) -- duplicate before storing it anywhere: packed arrays are references.
 func column(i: int) -> PackedByteArray:
@@ -574,7 +609,8 @@ func column(i: int) -> PackedByteArray:
 		11: return tags
 		12: return fuel
 		13: return fire_s
-		_: return debug_s
+		14: return debug_s
+		_: return struct_s
 
 ## Point persistent column i at bytes (restore path); the write bypasses books, present counts, and fire_present -- the caller rebuilds them.
 func load_column(i: int, b: PackedByteArray) -> void:
@@ -593,7 +629,8 @@ func load_column(i: int, b: PackedByteArray) -> void:
 		11: tags = b
 		12: fuel = b
 		13: fire_s = b
-		_: debug_s = b
+		14: debug_s = b
+		_: struct_s = b
 
 ## Recompute every booked row from fresh recounts -- the restore path's ledger rebuild; green asserts prove maintained == recounted, so this arrives consistent.
 func rebuild_books() -> void:
@@ -620,6 +657,10 @@ func rebuild_present() -> void:
 	for i in w * h:
 		if debug_s[i] != 0:
 			_debug_present += 1
+	_struct_present = 0
+	for i in w * h:
+		if struct_s[i] != 0:
+			_struct_present += 1
 
 # -- Debug furniture ---------------------------------------------------------
 

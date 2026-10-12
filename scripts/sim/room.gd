@@ -35,7 +35,7 @@ func tick() -> void:
 	water.tick()
 	react.tick()
 
-## Copy the persistent census: fifteen packet columns, the ignition overlay, both sweep-parity counters.
+## Copy the persistent census: sixteen packet columns, the ignition overlay, both sweep-parity counters.
 func snapshot() -> RoomState:
 	var s := RoomState.new()
 	var pk := stone.packet
