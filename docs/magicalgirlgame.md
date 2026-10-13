@@ -1,6 +1,8 @@
-# MAGICAL GIRL DEMO — Vertical Slice GDD v2.1
+# MAGICAL GIRL DEMO — Vertical Slice GDD
 
-*Delta doc on `world.md` v1.6 — shared engine, shared enemy IP, different verbs. Sibling of `witchgame.md` v3.1 and `amazongame.md` v1.0. Engine deltas: **none.** The strip, the bridge, LOOSE_STONE, the pockets — all engine now. This doc owns verbs, aiming, roster, rooms, and prizes.*
+*Delta doc on `world.md` — shared engine, shared enemy IP, different verbs. Sibling of `witchgame.md` and `amazongame.md`. Engine deltas: **none.** The strip, the bridge, LOOSE_STONE, the pockets — all engine now. This doc owns verbs, aiming, roster, rooms, and prizes.*
+
+*This doc is **final-form**: current and ship-plan design only — no history, no decision provenance. Development evidence lives in `dev_log.md`; the working roadmap is `current_plan.md`.*
 
 **Goal:** one continuous-scroll strip of seven reaches plus three single-screen shrines where every verb — grab, throw, swoosh, band, pip, pocket, vent, boil — is operational with placeholder art. If this slice is fun with gray boxes, the game exists.
 
@@ -8,28 +10,6 @@
 
 **Inheritance map:** tech (world §1) · data model (world §2) · element sim (world §3) · the bridge, heat and wetness, smolder (world §4) · rendering and light (world §9) · actor API and weight (world §6) · lasso core (world §7) · rooms, doors, death, lives, pockets (world §8) · level format (world §10).
 
-**Changelog v2.1 — the bridge lab sync (world v1.6)**
-
-- **The substrate is engine code now:** the bridge's thermal half (`ActorBridge` — the exchanges, claims, displacement, BT1–BT14), the collision mirror, the first heroine shell, and the room model (`Room`/`RoomState`, RT1–RT4). Her thermal numbers below are the shipped ones
-- **The 1:1:1:1 retune is law:** water, steam, damp, and wetness one unit — her wetness is 0–64, cross-talk steams at 8/s, and the carry is ~16 s. The retired numbers (cross-talk 16/s, carry ~32 s) are superseded wherever they appear below; retime R3's cistern pacing and the Cinderkit table's splash sizes at her next pass
-
-**Changelog v2.0**
-
-- Restructured as a delta doc; v1.0's §1–§4 and its engine claims are absorbed into `world.md`
-- **The heat ladder is fixed:** HOT = 63 (SACRED, shared). The throw vents ⌊H/2⌋ into the ball — **255 → 128 → 64 → 32.** Three throws from blazing, two of them incendiary (balls at 127 and 64 are HOT; the third, at 32, is cool). Gains halved to match: flap +4, dash +8, fire +4/t, lava +8/t
-- **The bridge is always live.** "Inert below HOT" is dead law. Below HOT the world steams — puddles shrink, rain wisps, her wetness boils off. At HOT the world catches — smolder warnings bloom where she stands. Steam below, fire at, no gate between
-- **Smolder is universal CA law** (world §4.4): a HOT ball smolders fuel on impact — 4 s of telegraph, then fire. The Cinderkit's "ignites on contact" likewise
-- **MELT is a CA reaction underfoot** — SR-A's pond melts as she skates; the melt-trail *is* the meter. The aura is cut
-- **Pits are pockets:** one-way, any orientation, an evil aura on every one. Matter in = lost (ledgered, fine). Enemies in = captured, scored. She is an actor — falling in is death
-- **Spouts and the star-well are cut.** Pockets keep what they take until the room forgives. The finale is the **nap garden:** the capture log napping in R7
-- **Aiming: eight directions, snapped, straight line before spin, no preview.** Canonical angles make the outcome space memorizable; the room is the feedback
-- **Touches defined** (see §6): any collision after her launch. The direct pot is the zero-touch pot
-- Stun flat 10 s (shared). Windup 0.2 s — frame data, M1 verify
-- **Lasso core inherited in full, water-cast included** (v1.0 was silent; the refraction cast is core tip behavior, world §7)
-- **Lives: 3, earned by the ladder.** Zero → level reset, all states. Death: the strip resets, respawn at the entry door, prizes persist. Dying to farm washes out at best
-- She inherits **wetness:** the mop-ferry-drip-boil loop, exercised lightly in R3, crossover-proofed
-- **LOOSE_STONE now engine-shipped and exercised here** (R2's pillar, R6's cast-stone) — the witch's demo never calls for it; ours does
-- Light posture: **outdoors the level sets the ambient; indoors she radiates** (lantern radius, a full screen). Firelight is a witch ability — her fires burn bright and cast nothing
 
 ## 0. Design doctrine
 
@@ -48,7 +28,7 @@
 
 ## 1. Tech setup
 
-Inherited from world §1 in full: Godot 4.5, 240×240 / 720×720, integer scaling, 16×16 tiles with 8×8 subtiles, 15×15 visible, 10 Hz integer deterministic tick. The per-room PRNG is code since the bridge lab (world v1.6); the modern conveniences still ride the actor shell — planned.
+Inherited from world §1 in full: Godot 4.5, 240×240 / 720×720, integer scaling, 16×16 tiles with 8×8 subtiles, 15×15 visible, 10 Hz integer deterministic tick. The per-room PRNG is code; the modern conveniences still ride the actor shell — planned.
 
 **Map:** one `LevelSpec` — the strip, **one RoomSpec, 112×15**, continuous scroll (camera free, clamped to strip bounds). No boundaries on the critical path; reaches are beat annotations, not walls. Three single-screen shrine RoomSpecs (15×15) attach via doors off-path; unobserved rooms freeze (inherited). The strip is always live — it's one room, and that's cheap.
 
@@ -136,9 +116,9 @@ HEARTS  = 3 (cap 5), 1s i-frames per hit
 
 **The ladder: 255 → 128 → 64 → 32.** Three throws from blazing to neutral; the first two balls HOT (127, 64 — smolder on impact, 4 s, then fire), the third cool (32 — a safe shot). Combat is thermal regulation, the regulation is fun, and it doesn't need managing. Gains are movement and contact — the wave's choreography writes the schedule; the streams feed her ammunition, and each catch-and-throw is a half-vent. Three of them is the level's ending.
 
-**Cooling is not authored — it is the bridge.** Film 4/s, deep 16/s, a full tile instant (`min(heat, water)`), rain boiling as it lands in her tile, wetness steaming off at 8/s (the 1:1 retune, world v1.6). All her cooling is water contact, and **the dunk is a steam bomb** — self-capped by the pool budget: one tile of steam, never a flood. Cistern ceilings are tall for a reason.
+**Cooling is not authored — it is the bridge.** Film 4/s, deep 16/s, a full tile instant (`min(heat, water)`), rain boiling as it lands in her tile, wetness steaming off at 8/s (the 1:1 retune). All her cooling is water contact, and **the dunk is a steam bomb** — self-capped by the pool budget: one tile of steam, never a flood. Cistern ceilings are tall for a reason.
 
-**Her wetness — the inherited verb, worn lightly.** She mops at the pool (by tier), carries ~16 s of drip (the 1:1 body, 0–64 — world v1.6), and drips where she stands; heat boils it off as steam where she wants steam. Nobody asks her to use it in the slice — R3 lets her discover she can — and it crossover-proofs her: the same loop the witch uses to water gardens, ours uses to leave a line of droplets across a cistern floor, like ruled paper.
+**Her wetness — the inherited verb, worn lightly.** She mops at the pool (by tier), carries ~16 s of drip (the 1:1 body, 0–64), and drips where she stands; heat boils it off as steam where she wants steam. Nobody asks her to use it in the slice — R3 lets her discover she can — and it crossover-proofs her: the same loop the witch uses to water gardens, ours uses to leave a line of droplets across a cistern floor, like ruled paper.
 
 **Death and lives.** Hearts to zero, or a pocket: **death.** The strip resets to baseline; she respawns at the entry door — the level's start; one life spent; a non-event. **Prizes persist** (they're hers), and the pocketed come home with the baseline — which means dying to farm is a wash at best: a death costs a life, the best chain pays one or two, and the ledger of lives closes at zero. **Shrine deaths are cheap:** the shrine resets, she's back at its door in the strip, one life spent, nothing else lost. **Zero lives → the level reset:** every room to baseline, prizes and tissues forfeit, hearts and lives restored, back to the very beginning. (If death proves too harsh in playtest, checkpoints are the standing reconciler — authored doorframes at reach seams. Not built this slice.)
 
@@ -275,7 +255,7 @@ HEAT: flap +4 · dash +8 · fire +4/t · lava +8/t (contact)
 THROW vents ⌊H/2⌋: 255 → 128 → 64 → 32   # three throws, two incendiary
 TUG: + ball's remaining heat
 COOLING: bridge tiers — film 4/s · deep 16/s · full tile instant (min(heat, water))
-WETNESS: cross-talk 8/s · drip 4/s · carry ≈ 16 s · body 0–64 at 1:1 (world v1.6)
+WETNESS: cross-talk 8/s · drip 4/s · carry ≈ 16 s · body 0–64 at 1:1
 SPIN: LIGHT 1:4 (sweep ≥45°) · HARD 1:2 (sweep ≥90°)
 LASSO_RANGE = 7 (shared) · SNATCH = 0.15 s · WINDUP = 0.2 s · STUN = 10 s flat
 GENTLE_DROP ≤ 1.5 tiles (shared)
@@ -318,9 +298,9 @@ CINDERKIT touch +8 <tune>
 
 Test 8×8 vignettes, not rooms. Keep the seed, not the room. Contact sheets for curation. The loop — generated rooms inspiring hand-authored ones — is the product.
 
-## Appendix B — risk register (game-side; engine risks live in world App. B)
+## Appendix B — risk register (game-side; engine risks live in world's appendix)
 
-- **The vent schedule:** if wave tuning is wrong, players end the fight still HOT and R5 punishes them for the wave's design, not theirs. The stream quota is the knob; test the R4→R5 seam specifically — with the halved gains and the three-throw ladder, the schedule is *tighter* than v1.0 assumed
+- **The vent schedule:** if wave tuning is wrong, players end the fight still HOT and R5 punishes them for the wave's design, not theirs. The stream quota is the knob; test the R4→R5 seam specifically — with the halved gains and the three-throw ladder, the schedule is *tighter* than assumed
 - **The touch-count rule:** R1 is the assert case. If playtesters can't count their own touches, the ladder is noise — the fix is geometry (louder feed callouts), not a HUD
 - **No-preview aiming:** if direction reads blurry, the fix is a single 8-way tick on the windup — not a dotted line. The whole doctrine is that canonical angles close the loop in the head
 - **Always-live below HOT:** she steams at any heat — wisps off every puddle she crosses. If it reads as noise, the knob is the tier floor (world §4.2), never a gate

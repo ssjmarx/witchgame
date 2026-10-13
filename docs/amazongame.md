@@ -1,6 +1,8 @@
-# AMAZON DEMO — Vertical Slice GDD v1.0
+# AMAZON DEMO — Vertical Slice GDD
 
-*Delta doc on `world.md` v1.6 — shared engine, shared enemy IP, different verbs. Sibling of `witchgame.md` v3.1 and `magicalgirlgame.md` v2.1. Where this doc and `world.md` disagree about engine behavior, `world.md` wins.*
+*Delta doc on `world.md` — shared engine, shared enemy IP, different verbs. Sibling of `witchgame.md` and `magicalgirlgame.md`. Where this doc and `world.md` disagree about engine behavior, `world.md` wins.*
+
+*This doc is **final-form**: current and ship-plan design only — no history, no decision provenance. Development evidence lives in `dev_log.md`; the working roadmap is `current_plan.md`.*
 
 **Engine deltas we are the demanding customer of:** the **LOOSE flag** (world §3, planned — her sword is its first real client), the **wind system** (world's open item — authored gusts ship in this slice regardless of the draft field), and the **shard-actor pattern** (matter leaving the packet as actor holdings and returning on settle — the pot-interior precedent generalized; a new customer of two planned rows, no new law). **One heroine-value dispensation, declared openly:** `SANDAL_JUMP_V`.
 
@@ -10,27 +12,6 @@
 
 **Inheritance map:** tech (world §1) · data model (world §2) · element sim (world §3) · the bridge, heat and wetness, smolder (world §4) · rendering and light (world §9) · actor API and weight (world §6) · lasso core (world §7) · rooms, doors, death, lives, pockets (world §8) · level format (world §10).
 
-**Changelog v1.0** — consolidation of brainstorm v0.1–v0.4
-
-*(Addendum, world v1.6 — the bridge lab)* The engine shipped the room model, the bridge's thermal half, and the first heroine shell; the 1:1:1:1 retune (water, steam, damp, wetness one unit) now prices every wetness number in the family. Our declared deltas — the LOOSE flag, the wind system, the shard-actor pattern — remain planned and untouched.
-
-- **Rooms reset on exit. Completely.** The witch's snapshot doors are dead here; the island runs the family default — baseline on every cycle. Lasting change lives in game-side flags, never matter. **The rooms forget; the satchel never does**
-- **No levels, no XP, no economy.** Tin is found (damage), laurels are found (health, four leaves per heart; past cap, one life each), jars and gadgets are found. Sustain is renewable (drops, respawning fauna); progress is not. No shop will ever be built
-- **The pip economy, third reading.** The girl's impacts *spend* pips; her sword *fills* them (full = panic = rout); bronze carries **grip** pips her strikes *drain* (empty = freed). One damage stat, both directions. The pip is the family's HP: the girl spends them, the Amazon fills them, the witch ignores them, and the lords lose them
-- **The flee is a system:** away-vector steering; a door is an exit only if it is *not between* the animal and her; doors close with her body or with matter; fences at one subtile; cower when boxed; panic decays while cowering (pens are renewable)
-- **The lasso yanks** — the enemy to one tile away, into sword range. Two yanks and the animal is wary (side-steps casts, this visit). **Bronze is immune: the lasso zips *her* to *it***
-- **Five throw arcs** from one formula: class base (heavy 1 / mid 2 / light 3) + effort (stand 0 / run 1 / shot-put 2). The shot-put is a motion input — back-forward-back-forward — because she is the athlete, and hers is the only game with execution
-- **Carrying is two-handed** and restricting by class; the sword button becomes drop, the lasso button becomes throw
-- **The quiver is one nibble:** fifteen arrows, a 4-bit field. The engine joke canon grows
-- **Combo drops** on the rout: arrows (a nibble's worth), hearts, randomized jars
-- **The winged sandals: "DOUBLE JUMP."** Jump height 10px → 20px. One jump, doubled; the card does not lie. `SANDAL_JUMP_V = 139` — her doc's one dispensation
-- **Wind completes smolder instantly.** Smolder is a placed fuse; the bag of winds is the detonator
-- **Her heat byte never moves.** Fire costs her hearts (quarter-rate while wet — the steam-budget nod at quarter scale); flame is cargo in the torch, the arrow, the jar. She is the only heroine who is never hot
-- **The grip is the boss health bar** — pips in reverse, fixed pools, so exploration always shortens every future fight
-- **Purification, not destruction:** the lords are taken, not evil; the host cannot be hurt; the win state is a friend back
-- **Saffron is structure (b):** questgiver from the landing, taken mid-slice at the vault door — the mini-boss is the tutorial for the finale mechanic of the full game
-- **Cut:** the spirit-pocket seal (expulsion is CA smoke, gone), snapshots, the rodeo (post-slice), the grapple-any-surface hook (post-slice, the movement capstone), petrify and the thunderbolt (post-slice, endgame)
-- **Upstream amendments:** pip dots above enemies are family-wide now (the girl's precedent, our law); the girl's terrain-zip ruling stands from her doc
 
 ## 0. Design doctrine
 
@@ -47,7 +28,7 @@
 
 ## 1. Tech setup
 
-Inherited from world §1 in full: Godot 4.5, 240×240 / 720×720, integer scaling, 16×16 tiles with 8×8 subtiles, 10 Hz integer deterministic tick, per-room PRNG (code since the bridge lab — world v1.6).
+Inherited from world §1 in full: Godot 4.5, 240×240 / 720×720, integer scaling, 16×16 tiles with 8×8 subtiles, 10 Hz integer deterministic tick, per-room PRNG (code).
 
 **Map:** one `LevelSpec`, **eight `RoomSpec`s** — the beach (open-sky, wide) and seven dungeon rooms across three descending levels. Rooms are modest (15×15 to ~30×15, authoring's call); doors connect; some drops are one-way (you came down here; getting back is the map's memory). Unobserved rooms freeze (inherited). **Door policy: baseline on cycle — every door, always.** The strip of the girl's demo and the chambers of the witch's are both linear; ours is a loop, and the loop is cheap because rooms forgive.
 
@@ -349,7 +330,7 @@ SHARDS: cap 8 live · settle = work order back · restore = return with baseline
 
 Test 8×8 vignettes, not rooms. Keep the seed, not the room. The loop — generated vignettes inspiring authored rooms — is the product.
 
-## Appendix B — risk register (game-side; engine risks live in world App. B)
+## Appendix B — risk register (game-side; engine risks live in world's appendix)
 
 - **Flee steering:** the away-vector is steering, not pathfinding — the risk is jitter (oscillation against walls, door-shopping dither). The knob is damping and a short commit window, never scripted routes
 - **The shot-put motion:** a fighting input in the family's first execution-demanding game. Test in M2 with strangers; if it whiffs, the fallback is a hold-and-release windup — but the motion is the athlete's signature, so it gets a real chance first

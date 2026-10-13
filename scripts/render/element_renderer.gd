@@ -11,6 +11,9 @@ const SUB_QUADS: Array = [[GridSand.TL, 0, 0], [GridSand.TR, 8, 0], [GridSand.BL
 const GAS_DRAW: Array[int] = [TilePacket.Mat.SMOKE, TilePacket.Mat.STEAM]   # density order; the band split walks it reversed -- the lightest gas takes the topmost rows
 const BOTTOM_MASK := GridSand.BL | GridSand.BR  # the two lower subtile slots
 const TOP_MASK := GridSand.TL | GridSand.TR      # the two upper subtile slots
+const EDGE_X: Array[int] = [0, 1, 0, -1]   # the four edges of a subtile cell: top, right, bottom, left -- the neighbor cell across each
+const EDGE_Y: Array[int] = [-1, 0, 1, 0]
+const EDGE_R: Array = [[0, 0, 8, 1], [7, 0, 1, 8], [0, 7, 8, 1], [0, 0, 1, 8]]   # each edge's pixel rect within the cell
 
 # the sim state this renderer draws
 var stone: GridStone
@@ -29,6 +32,7 @@ var texture: ImageTexture
 # overlays
 var debug := false          # G: air pockets + grid
 var hover := Vector2i(-1, -1)
+var hover_sub := Vector2i(-1, -1)   # the exact subtile cell under the mouse -- subtile-sized cursor, set by the editor
 var furniture := false       # editor: draw debug-tile glyphs without the full G overlay
 
 ## Bind the sim pair, the room's seed for the FX domain, and create the map-sized image and texture.
@@ -74,44 +78,47 @@ func frame() -> void:
 		_draw_debug()
 	if debug or furniture:
 		_draw_furniture()
-	if hover.x >= 0 and hover.y >= 0:
+	if hover_sub.x >= 0 and hover_sub.y >= 0:
+		_draw_cursor_sub()
+	elif hover.x >= 0 and hover.y >= 0:
 		_draw_cursor()
 	texture.update(image)
 
-## Paint one tile's matter face onto the base layer: full 4/4 draws the beveled stone or planked wood face, partial nibbles draw 8×8 quads with lit lips (the soil pattern on the stone and wood banks).
+## Paint one tile's matter with the seam rule: each matter subtile fills with its bank, and every edge reads its neighbor -- lit lips on exposure, dark seams against loose or foreign matter, and silence between two members (orthogonally adjacent members are one structure, world §3).
 func _draw_terrain(x: int, y: int) -> void:
-	var px := x * TILE
-	var py := y * TILE
 	var i := stone.idx(x, y)
-	var stone_n: int = stone.packet.get_sub(i, TilePacket.K_STONE)
-	var wood_n: int = stone.packet.get_sub(i, TilePacket.K_WOOD)
-	if stone_n == 15:
-		_face(px, py, Palette.BANK_STONE, false)
-		return
-	if wood_n == 15:
-		_face(px, py, Palette.BANK_WOOD, true)
-		return
-	for c in SUB_QUADS:
-		var bit: int = c[0]
-		if (stone_n & bit) != 0:
-			_quad(px + c[1], py + c[2], Palette.BANK_STONE)
-		elif (wood_n & bit) != 0:
-			_quad(px + c[1], py + c[2], Palette.BANK_WOOD)
+	var s := stone.packet.struct_s[i]
+	var sn: int = stone.packet.get_sub(i, TilePacket.K_STONE)
+	var wn: int = stone.packet.get_sub(i, TilePacket.K_WOOD)
+	for c in 4:
+		var bit := 1 << c
+		if (sn & bit) != 0:
+			_cell_face(x, y, c, Palette.BANK_STONE, (s & bit) != 0)
+		elif (wn & bit) != 0:
+			_cell_face(x, y, c, Palette.BANK_WOOD, (s & bit) != 0)
 
-## The full-tile face: filled square, dark seam top and left, the bevel pixel -- and the plank seam for wood.
-func _face(px: int, py: int, bank: Array, planked: bool) -> void:
-	image.fill_rect(Rect2i(px, py, TILE, TILE), bank[1])
-	image.fill_rect(Rect2i(px, py, TILE, 1), bank[0])
-	image.fill_rect(Rect2i(px, py, 1, TILE), bank[0])
-	image.set_pixel(px + 11, py + 11, bank[0])
-	if planked:
-		image.fill_rect(Rect2i(px, py + 8, TILE, 1), bank[0])   # the plank seam -- minimal wood identity
-
-## One 8×8 matter quad: filled, lit lip along its top and left edges.
-func _quad(qx: int, qy: int, bank: Array) -> void:
+## One matter cell: the fill, then each of its four edges -- lip on exposure, seam against matter that is not this structure, silence between two members.
+func _cell_face(x: int, y: int, c: int, bank: Array, member: bool) -> void:
+	var qx := x * TILE + (c & 1) * 8
+	var qy := y * TILE + (1 - (c >> 1)) * 8
 	image.fill_rect(Rect2i(qx, qy, 8, 8), bank[1])
-	image.fill_rect(Rect2i(qx, qy, 8, 1), bank[2])
-	image.fill_rect(Rect2i(qx, qy, 1, 8), bank[2])
+	for e in 4:
+		var nx: int = x * 2 + (c & 1) + EDGE_X[e]
+		var ny: int = y * 2 + (1 - (c >> 1)) + EDGE_Y[e]
+		var rect := Rect2i(qx + EDGE_R[e][0], qy + EDGE_R[e][1], EDGE_R[e][2], EDGE_R[e][3])
+		var oob := nx < 0 or ny < 0 or nx >= stone.width * 2 or ny >= stone.height * 2
+		if oob:
+			image.fill_rect(rect, bank[2])   # the map edge: an exposed face
+			continue
+		var ni := (ny >> 1) * stone.width + (nx >> 1)
+		var nbit := 1 << ((1 - (ny & 1)) * 2 + (nx & 1))
+		var nmat: int = (stone.packet.get_sub(ni, TilePacket.K_STONE) | stone.packet.get_sub(ni, TilePacket.K_WOOD)) & nbit
+		if nmat == 0:
+			image.fill_rect(rect, bank[2])   # exposed: the lit lip
+		elif member and (stone.packet.struct_s[ni] & nbit) != 0:
+			pass   # two members, orthogonally adjacent: one structure, no line
+		else:
+			image.fill_rect(rect, bank[0])   # the seam: loose against structure, or structure against structure
 
 ## Overlay air pockets, per-segment level lines, and the tile grid (G).
 func _draw_debug() -> void:
@@ -180,6 +187,15 @@ func _draw_cursor() -> void:
 	image.fill_rect(Rect2i(px, py + TILE - 1, TILE, 1), Palette.DEBUG_CURSOR)
 	image.fill_rect(Rect2i(px, py, 1, TILE), Palette.DEBUG_CURSOR)
 	image.fill_rect(Rect2i(px + TILE - 1, py, 1, TILE), Palette.DEBUG_CURSOR)
+
+## The subtile cursor: an 8x8 bracket at the exact cell -- what you point at is what you paint (world §3 authoring).
+func _draw_cursor_sub() -> void:
+	var px := hover_sub.x * 8
+	var py := hover_sub.y * 8
+	image.fill_rect(Rect2i(px, py, 8, 1), Palette.DEBUG_CURSOR)
+	image.fill_rect(Rect2i(px, py + 7, 8, 1), Palette.DEBUG_CURSOR)
+	image.fill_rect(Rect2i(px, py, 1, 8), Palette.DEBUG_CURSOR)
+	image.fill_rect(Rect2i(px + 7, py, 1, 8), Palette.DEBUG_CURSOR)
 
 ## Loose soil: one 8x8 quad per set nibble bit, light lip on subtiles with no soil directly above, damp darkening from the top of the occupied region (8 damp per pixel line -- the creeping front).
 func _draw_soil(x: int, y: int, px: int, py: int, n: int) -> void:

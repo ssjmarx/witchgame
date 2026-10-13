@@ -8,7 +8,7 @@ The human decides what gets built, reviews every change, and owns every commit. 
 
 ## 1. Ask, don't assume
 
-The game design documents (`docs/world.md` and friends) are the canonical vision for the game, subject to update by the human at any time. Read them at the start of every session (`.clinerules` fixes the boot order). If anything needed for the task at hand is ambiguous or under-specified, **ask, don't assume** — a wrong guess ships in the diff.
+The game design documents are the canonical vision for the game, subject to update by the human at any time. Read them at the start of every session (`.clinerules` fixes the boot order). The doc family has split responsibilities: `docs/current_plan.md` is the working roadmap (the only doc describing future work in detail), `docs/world.md` and the game deltas are **final-form** law (current systems and ship-plan only — no history, no decision provenance), and `docs/dev_log.md` is the development log (session rulings, changelogs, supersessions — evidence, not law). If anything needed for the task at hand is ambiguous or under-specified, **ask, don't assume** — a wrong guess ships in the diff.
 
 ## 2. File access: the whole repo is yours
 

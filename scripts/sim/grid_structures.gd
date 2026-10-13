@@ -48,7 +48,7 @@ func repartition_around(x: int, y: int) -> void:
 			var n: int = pk.struct_s[stone.idx(tx, ty)]
 			for c in 4:
 				if (n & (1 << c)) != 0:
-					_flood_piece(tx * 2 + (c & 1), ty * 2 + (c >> 1))
+					_flood_piece(tx * 2 + (c & 1), ty * 2 + (1 - (c >> 1)))
 
 ## Flood one membership component whole from subtile cell (cx, cy); a singleton piece drops its bit -- the cut rule's teeth.
 func _flood_piece(cx: int, cy: int) -> void:
@@ -83,13 +83,25 @@ func _flood_piece(cx: int, cy: int) -> void:
 	if cells.size() == 1:
 		var only: int = cells[0]
 		@warning_ignore("integer_division")
-		var ti := (only / w2 >> 1) * width + ((only % w2) >> 1)
+		var ox := only % w2
 		@warning_ignore("integer_division")
-		var bit := 1 << (((only / w2) & 1) * 2 + (only % w2 & 1))
+		var oy := only / w2
+		var ti := (oy >> 1) * width + (ox >> 1)
+		var bit := 1 << ((1 - (oy & 1)) * 2 + (ox & 1))
 		pk.set_struct(ti, pk.struct_s[ti] & ~bit)
 
-## True when subtile cell (cx, cy) carries membership -- the invariant says membership rides matter, so the bit alone decides.
+## True when subtile cell (cx, cy) carries membership -- GridSand's bit layout: the top row holds bits 4 and 8, the bottom row bits 1 and 2.
 func _is_member(cx: int, cy: int) -> bool:
 	@warning_ignore("integer_division")
 	var i := (cy >> 1) * width + (cx >> 1)
-	return (pk.struct_s[i] & (1 << ((cy & 1) * 2 + (cx & 1)))) != 0
+	return (pk.struct_s[i] & (1 << ((1 - (cy & 1)) * 2 + (cx & 1)))) != 0
+
+## Authoring stamp: set membership on one exact cell -- components only grow, so no re-partition; refuses cells without stone or wood matter.
+func stamp(x: int, y: int, bit: int) -> void:
+	if not stone.in_bounds(x, y):
+		return
+	var i := stone.idx(x, y)
+	var matter := pk.get_sub(i, TilePacket.K_STONE) | pk.get_sub(i, TilePacket.K_WOOD)
+	if (matter & bit) != bit:
+		return
+	pk.set_struct(i, pk.struct_s[i] | bit)

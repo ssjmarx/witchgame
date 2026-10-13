@@ -1,6 +1,8 @@
-# WITCH DEMO — Vertical Slice GDD v3.2
+# WITCH DEMO — Vertical Slice GDD
 
-*Delta doc on `world.md` v1.7. Sibling of `magicalgirlgame.md` v2.1 and `amazongame.md` v1.0. The engine — room model, CA, bridge, actor shell, contact contract, lasso core, doors, pockets, death and lives machinery, rendering, light rig, level format — is inherited from there. This doc owns her verbs, her rooms, her policy, and her roster. Where this doc and `world.md` disagree about engine behavior, `world.md` wins.*
+*Delta doc on `world.md`. Sibling of `magicalgirlgame.md` and `amazongame.md`. The engine — room model, CA, bridge, actor shell, contact contract, lasso core, doors, pockets, death and lives machinery, rendering, light rig, level format — is inherited from there. This doc owns her verbs, her rooms, her policy, and her roster. Where this doc and `world.md` disagree about engine behavior, `world.md` wins.*
+
+*This doc is **final-form**: current and ship-plan design only — no history, no decision provenance. Development evidence lives in `dev_log.md`; the working roadmap is `current_plan.md`.*
 
 **Goal:** one contiguous dungeon of seven chambers where every verb, element, container, and enemy behavior is operational with placeholder art. If this slice is fun with gray boxes, the game exists.
 
@@ -8,51 +10,6 @@
 
 **Inheritance map:** §1 tech (world §1) · §2 data (world §2) · §3 sim (world §3) · §4 rendering (world §9) · lasso core (world §7) · enemy frame (world §6) · doors/death/lives (world §8) · smolder (world §4.4) · thermal exchanges (world §4.2).
 
-**Changelog v3.2 — the editor lab: her dungeons get their dark (world v1.7)**
-
-- **The palette law is code** (world §9): DB16 master plus documented guests, tile banks at most four and sprite banks at most three, index 0 darkest — her placeholder bank (`SPRITE_WITCH`) is in it. The v3.1 "palette bake stays pending" addendum is half-superseded: the *law* shipped; her sheet's re-quantization stays pending
-- **Her dungeon sets are code**: four ambience banks — whisper blue, brick crypt, moss grotto, sandstone catacomb — recolor the same cave backdrop; a backdrop's identity is (room seed, set), so every chamber of her map can carry its own dark deterministically
-- **The room editor is her map's seed** (`test_editor.tscn`): four persistent rooms, paint over tiles and debug furniture (water sources, drains, steam vents, open air), an inspector card, a witch chorus sharing one input — her seven chambers author into this, and the save bytes are the level format's first real artifact (world §10)
-
-**Changelog v3.4 — the pace retune (code truth banked; no lab)**
-
-- **WALK is 80 px/s (5 t/s)** — witch.gd has said 80 since the bridge lab; the doc's 40 was drift, and the bank follows the code (world §0 law 10). Horizontal jump reach doubles (~2 tiles at the SACRED arc); C0's 16px ledge joke is vertical and survives
-- **PANIC_RUN retired: panic steers, never speeds.** The flee runs at WALK — the
-  pressure is the clock, the ratchet, and the forced direction. C2's panic-run
-  geometry retimes at M4 with both retunes in hand
-
-**Changelog v3.3 — the matter arc rulings (design-ahead-of-code; world v1.8 §3)**
-
-    Her swim becomes buoyancy (world §3): no more infinite stroke-jumping — she floats to the top, rests with her bottom half submerged, and a stroke from the surface buys exactly 10px above the water top (the SACRED jump, kept through water). Walking the bottom wants ballast — the future grab mechanic's job, and the weight-4 turtle is its first customer (ruling pending)
-    Cold is cut: no ice, no freeze/thaw, no underfoot melt. The turtle loses its COLD aura — re-theme pending; its landed state (heavy riser, pressure plates) unchanged
-    Her dungeon is matter now (the bedrock lab): wood and stone terrain retire into structures — C3's aqueduct burns as a wood_s structure and collapses by the compromise rule (world §3: an unsupported piece falls as a unit), C5's far wall is a wood_s wall that must be bone-dry to catch, and C2's fizzle grind survives as wood_s moisture. A chipped wall admits water: acid digs, water follows
-    Structure pickup rides her lasso (world §3's movement doctrine): the lasso is universal — enemies, pots, and structures are one grasp set, one thing at a time — and a structure within her weight cap lassos like anything else, rotates in 90° increments while carried, and is tossed or placed back into the CA. Bridge-building with tetris blocks; the shard-actor pattern's second customer (rotation binding pending). C3's aqueduct, C5's wall, and every fallen beam afterward are hers to re-lay
-    Smolder is hers now: the 4 s timer lives actor-side (the beam lab owns it; world §4.4 superseded) — the CA keeps only the steam and the fuel
-    C3's rain authors with the shipped furniture (sources and drains) until/unless a rain system returns with world's boundary flux
-
-**Changelog v3.1 — the bridge lab lands her substrate (world v1.6)**
-
-- **She walks.** `Witch` is code: a `CharacterBody2D` on a `ThermalBody`, the 8×24 hitbox (a subtile wide, three tall), the 10px jump SACRED in engine code, the capacity-aware wade line, swim (submerged → buoyancy, world §3's weight system: floats to the top, rests half-submerged, the 10px surface stroke — no water-walking, no infinite stroke-jumping; ballast comes with the grab mechanic), the outlined sheet driving her anim state — and she never writes a tile; everything crosses the bridge. The witch lab (`test_witch.tscn`) is her playground: spawn/teleport (N), paint stone/water/wood/soil/damp, ignite (I), live heat/wetness/family readout
-- **The bridge carries her now** (world §4 shipped): ABSORB/DRIP/BOIL/CROSS-TALK/DRY, fire contact +4/t — the mop verb, the steam bomb, and the fire-walk budget are engine law with acceptance proofs (BT1–BT14). Her panic clock, the smolder stimulus, and her verbs (lasso, beam, tags) remain game-side
-- **Wetness is 1:1 now — the 1:1:1:1 retune is law** (world v1.6): water, steam, damp, and wetness are one unit; her meter is 0–64 and v3.0's "0–254 even" body is superseded. The carry window halves (~16 s at saturation, DRIP 4/s) — the knob stays the DRIP rate, never a second lattice. C2's mop-and-drip beat gets faster to drain; author accordingly
-- Her dungeons have their memory now: the rooms lab (RT1–RT4) shipped snapshot/restore and the frozen unobserved room (world §8's first half), and the collision mirror keeps her floors honest — fire burns them out from under her
-
-**Changelog v3.0**
-
-- Restructured as a delta doc; §1–§4 of v2.1 are absorbed into `world.md`
-- **Her damp meter is now universal wetness** (0–254, even lattice). DRY_RATE 3/s is retired — DRIP is ~4 water/s randomized, so the carry window is ~32 s of walking. *Tuning note: if the window is too generous, the knob is the DRIP rate, not a new mechanic*
-- **She has heat now.** Sources: FIRE/LAVA contact only (+4/+8 per tick); she generates none — her magic pays zero heat. HOT witch smolders fuel she overlaps, dries damp soil underfoot (landslide), melts ice, trails steam through puddles. Her heat never hurts her; it hurts the room
-- **The fire-walk license is the steam budget:** fire pushes her panic clock at ½× while her wetness > 0. The hiss stopping is the warning — fire zones burn off her cargo, now with teeth
-- **Panic v2:** when panic ends she enters recovery frames (0.75 s, clock frozen, briefly vulnerable); a hit or fire during recovery resumes panic from the frozen value; calm drains the clock at 1×. KO at 5. CRISP unchanged: panic ending while still in fire
-- **Spikes:** top contact only — engine bounce along the trajectory ring, +1 s panic. She has no hearts; she has the clock
-- **Tags are fuel (8).** The smolder warning applies to them. A hot witch leaning on her own tag gets four seconds of mercy
-- **The beam's burn band is a smolder stimulus** — the CA owns the 4 s timer and hysteresis (world §4.4). The beam-drying grind survives as engine law: four seconds per fizzle, repeated
-- **Wisp ignition is HOT-presence smolder** — 4 s of hissing telegraph. C2's bridge beat retimes accordingly
-- **Aim anchor unified at sprite center** (stick vector and mouse both; the same anchor steers the light). The mouse threshold's old feet-anchor is retired
-- Her breadcrumb trail extends the engine trajectory ring to 5 s
-- **Lives: 3, found as world secrets.** Zero lives → the full reset. The entry-door ritual is the voluntary version
-- Enemy API compliance is law (world §6): every witch enemy must survive the magical girl's verbs. A witch-caught Drip is a throwable water balloon — its SPLASH is its wetness, dumped
-- *(Addendum, `d3946f0`)* The outlined witch sheet placeholder (`assets/witch/witch-Sheet-outlined.png`) is in the repo — placeholder art; the palette bake (world §9) stays pending. The fire lab shipped her world's fuel-and-fire substrate (world v1.5): burnable wood, contact ignition at 5 ticks, and the boil ladder that finally dries damp — her smolder, heat, and panic clock remain bridge-side (E4)
 
 ## 0. Design doctrine
 
@@ -69,7 +26,7 @@ The laws this document has accumulated. When in doubt, these decide. Engine doct
 
 ## 1. Tech setup
 
-Inherited from world §1 in full: Godot 4.5, 240×240 / 720×720, integer scaling, 16×16 tiles with 8×8 subtiles, 15×15 visible, 10 Hz integer deterministic tick. Per-room PRNG and the modern conveniences ride the actor shell — planned, not yet code (world v1.1 sync).
+Inherited from world §1 in full: Godot 4.5, 240×240 / 720×720, integer scaling, 16×16 tiles with 8×8 subtiles, 15×15 visible, 10 Hz integer deterministic tick. Per-room PRNG and the modern conveniences ride the actor shell — planned, not yet code.
 
 **Map:** one `LevelSpec`, 112×15, seven `RoomSpec`s separated by door walls. Every door is player-facing — a boundary by engine law. Camera clamps to the active room's rect. Unobserved chambers freeze (inherited).
 
@@ -131,7 +88,7 @@ TRAIL = 5 s                       # her breadcrumb extension of the engine ring
 
 **The jump.** JUMP_HEIGHT = 10, SACRED — margin over the 8px subtile step. The 16px ledge in C0 remains unjumpable; the joke survives. Coyote time, jump buffering, ledge tolerance: in.
 
-**Locomotion through liquids (inherited; shipped at the bridge lab):** the capacity-aware wade line (half the tile's free capacity in liquid — a soil-bottomed pool reads true); submerged → swim (stroke = jump, the crouch dive in code, 10px surface hop, no air meter — air is gated, not simulated). Oil is swimmable and grants no wetness (bridge-side, still design). FLOW and wind push her, capped vs. walk speed (game-side, pending).
+**Locomotion through liquids (inherited; shipped):** the capacity-aware wade line (half the tile's free capacity in liquid — a soil-bottomed pool reads true); submerged → swim (stroke = jump, the crouch dive in code, 10px surface hop, no air meter — air is gated, not simulated). Oil is swimmable and grants no wetness (bridge-side, still design). FLOW and wind push her, capped vs. walk speed (game-side, pending).
 
 **The panic system (v2).** One clock, two feeders, one vulnerable calm:
 
@@ -282,7 +239,7 @@ Engine stages E0–E5 are world.md's; E5 ships in two cuts — ambient+omni earl
 - **M2 — Water** *(needs E1)*: GridWater integration + flow export + the wick rule + drizzle condensation + chamber restore. C3's pool and the aqueduct beat
 - **M2.5 — Materials** *(needs E2)*: soil subtiles (nibble CA, damp front, mortar), stone subtiles, oil, acid + decay, glaze, lava, ice. Reaction matrix + the ledger
 - **M3 — Light deep-dive** *(needs E5-cut-2)*: binary beam + transition, focus bands, LIT mask, smolder integration (stimulus flag → CA timer → fizzle grind), steerable growth. C5 testable in isolation
-- **M4 — Witch thermal + panic** *(needs E4 — and its substrate is code since the bridge lab: swim, wade, ABSORB/DRIP/BOIL/CROSS-TALK/DRY run on her now, world v1.6; the panic machinery remains)*: panic v2 (recovery frames, resume-from-value, steam budget), KO, CRISP, spike bounce, heat-from-fire and its consequences. C3 playable end-to-end
+- **M4 — Witch thermal + panic** *(needs E4 — and its substrate is code: swim, wade, ABSORB/DRIP/BOIL/CROSS-TALK/DRY run on her now; the panic machinery remains)*: panic v2 (recovery frames, resume-from-value, steam budget), KO, CRISP, spike bounce, heat-from-fire and its consequences. C3 playable end-to-end
 - **M5 — Pots + remaining enemies** *(needs E3/E4)*: pot interior, the fill verb, capture rules, break/buoyancy, wisp (smolder-based), turtle, breeze (wind authored or stubbed), eel + conductivity, botanical triggers. C3–C5 real
 - **M6 — Meta** *(needs E4)*: pressure plate, paper tags (fuel objects, smolderable, stake-on-death), plumb bob, lives-as-secrets, global reset / the ritual, C6 + the waterfall, the opening cinematic. Slice complete
 
@@ -337,7 +294,7 @@ LANTERN_BUOY = <tune> · WISP_STICK = 20 s · EEL_ZAP = 20 s
 - **Smolder fairness:** any fuel whose loss strands a solve has damp, a diffuser, distance, or a reset path — and the 4 s warning is never the only mercy
 - Test 8×8 vignettes, not chambers. Keep the seed, not the room. Contact sheets for curation. The loop — generated rooms inspiring hand-authored ones — is the product.
 
-## Appendix B — risk register (game-side; engine risks live in world App. B)
+## Appendix B — risk register (game-side; engine risks live in world's appendix)
 
 - **The always-hot fleeing witch:** under two seconds of flame fills her to HOT; everything she passes smolders behind her. Intended — but playtest the wake. If cornered-in-vines ignitions feel like betrayal rather than drama, the knob is smolder decay rate, not her heat gains
 - **Panic state machine:** recovery frames, resume-from-frozen-value, drain-after-recovery — three interacting timers on one clock. Test the chains deliberately: hit → recover → hit → recover → fire, and assert the KO lands only at five accrued

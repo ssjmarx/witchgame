@@ -1,6 +1,6 @@
 ## The room editor v1 (world.md §8, the level format's seed): four persistent
-## rooms on the F-keys, menu-driven paint over tiles and debug furniture, an
-## inspector card, and a chorus of witches sharing one input -- a playground.
+## rooms on the F-keys, blocking overlay menus, the struct toggle and exact
+## subtile painting, and a chorus of witches sharing one input -- a playground.
 
 class_name TestEditor
 extends TestSandbox
@@ -10,8 +10,12 @@ const SLOT_PATH := SLOT_DIR + "/slot_%d.bin"
 const EDITOR_SEED_BASE := 11   # rooms 0-3 seed 11-14, clear of every suite's seeds
 const DEFAULT_ROOM := 11       # the fresh-slot carve: 11 wide keeps every U-shell write in bounds
 const AMBIENCE_NAMES := ["blue", "red", "green", "yellow"]
+const TOOL_PAGES: Array = [
+	[["stone_s", Tool.STONE_S], ["wood_s", Tool.WOOD_S], ["soil", Tool.SOIL], ["damp", Tool.DAMP], ["water", Tool.WATER], ["oil", Tool.OIL], ["acid", Tool.ACID], ["lava", Tool.LAVA], ["steam", Tool.STEAM], ["smoke", Tool.SMOKE]],
+	[["water source", Tool.SRC_WATER], ["drain", Tool.DRAIN], ["steam vent", Tool.SRC_STEAM], ["open air", Tool.OPEN_AIR]],
+]
 
-enum Tool { STONE, WOOD, SOIL, WOOD_S, STRUCT, DAMP, WATER, OIL, ACID, LAVA, STEAM, SMOKE, SRC_WATER, DRAIN, SRC_STEAM, OPEN_AIR }
+enum Tool { STONE_S, WOOD_S, SOIL, DAMP, WATER, OIL, ACID, LAVA, STEAM, SMOKE, SRC_WATER, DRAIN, SRC_STEAM, OPEN_AIR }
 
 var rooms: Array[Room] = []
 var renderers: Array[ElementRenderer] = []
@@ -20,13 +24,14 @@ var mirrors: Array[CollisionMirror] = []
 var room_witches: Array = []   # one Array[Witch] per room -- the chorus rosters
 var observed := 0
 var tool := Tool.WATER
+var struct_on := false         # the struct toggle: with it on, the solid brushes author structure membership cell by cell (world §3)
+var struct_button: Button
+var overlay: PanelContainer
+var overlay_pause_saved := false
 
 # editor chrome: Controls on a high layer, never pixels in the CA picture
 var ui: CanvasLayer
 var menu_bar: HBoxContainer
-var panels: Array[PanelContainer] = []
-var inspector: PanelContainer
-var inspect_label: Label
 
 ## Build the sibling rooms, renderers, sprites, and mirrors; load every slot from disk or carve the default bowl; build the chrome; observe slot 0.
 func _setup() -> void:
@@ -125,43 +130,78 @@ func _unhandled_key_input(event: InputEvent) -> void:
 		return
 	super._unhandled_key_input(event)
 
-## Held strokes need a held button and a mouse clear of the chrome: RMB erases (furniture included), LMB lays the current tool.
+## Held strokes need a held button and a mouse clear of the chrome: RMB erases the exact subtile (a cut), LMB lays the current tool -- solid brushes paint the exact subtile cell, liquids and furniture dose the tile. Strokes are ignored while the overlay menu is open.
 func _paint_stroke(t: Vector2i) -> bool:
-	if t.x < 0 or _over_ui():
+	if t.x < 0 or _over_ui() or overlay.visible:
 		return false
 	if not (Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT) or Input.is_mouse_button_pressed(MOUSE_BUTTON_RIGHT)):
 		return false
 	if Input.is_mouse_button_pressed(MOUSE_BUTTON_RIGHT):
-		_erase_tile(t)
+		_erase_sub(_hover_sub())
 		mirrors[observed].sync()
+		renderer.redraw()
 		return true
 	return _apply_tool(t)
 
-## The shared erase plus the furniture column: RMB clears everything the editor can author at this tile, then the observed room's structures re-partition.
-func _erase_tile(t: Vector2i) -> void:
-	super._erase_tile(t)
-	rooms[observed].sand.structures.repartition_around(t.x, t.y)
-	stone.packet.set_debug(stone.idx(t.x, t.y), TilePacket.DebugTile.NONE)
+## Erase one exact subtile cell: its matter bit (any kind) through the cut path -- the cut re-partitions; a cell without solid matter falls back to the tile-level wipe (liquids, fire, furniture).
+func _erase_sub(sub: Vector2i) -> void:
+	if sub.x < 0 or sub.y < 0:
+		return
+	var pk := stone.packet
+	var i := stone.idx(sub.x >> 1, sub.y >> 1)
+	var bit := (1 if (sub.y & 1) == 1 else 4) << (sub.x & 1)
+	var matter: int = pk.get_sub(i, TilePacket.K_STONE) | pk.get_sub(i, TilePacket.K_WOOD) | pk.get_sub(i, TilePacket.K_SOIL)
+	if (matter & bit) == 0:
+		for m in TilePacket.MAT_COUNT:
+			pk.set_pool(i, m, 0)
+		pk.set_fire(i, 0)
+		pk.set_debug(i, TilePacket.DebugTile.NONE)
+		return
+	if (pk.get_sub(i, TilePacket.K_STONE) & bit) != 0:
+		pk.set_sub(i, TilePacket.K_STONE, pk.get_sub(i, TilePacket.K_STONE) & ~bit)
+	if (pk.get_sub(i, TilePacket.K_WOOD) & bit) != 0:
+		pk.set_sub(i, TilePacket.K_WOOD, pk.get_sub(i, TilePacket.K_WOOD) & ~bit)
+	if (pk.get_sub(i, TilePacket.K_SOIL) & bit) != 0:
+		pk.set_sub(i, TilePacket.K_SOIL, pk.get_sub(i, TilePacket.K_SOIL) & ~bit)
+	rooms[observed].sand.structures.repartition_around(sub.x >> 1, sub.y >> 1)
 
-## Lay one tool at the hover tile: solids and furniture refuse occupied ground, soil and wood_s lay one guarded subtile, the struct brush fuses the tile's matter, liquids dose 255 through the tool path.
+## The hover in expanded-grid subtile coords -- the exact 8x8 cell under the mouse.
+func _hover_sub() -> Vector2i:
+	var p := get_global_mouse_position()
+	var s := Vector2i(floori(p.x / 8.0), floori(p.y / 8.0))
+	if s.x < 0 or s.y < 0 or s.x >= GRID_W * 2 or s.y >= GRID_H * 2:
+		return Vector2i(-1, -1)
+	return s
+
+## Paint one exact subtile cell: the pointed-at cell only, empty across every kind; with the struct toggle on, stone and wood carry membership (authored structures grow cell by cell, world §3).
+func _paint_cell(sub: Vector2i, kind: int) -> bool:
+	if sub.x < 0 or sub.y < 0:
+		return false
+	var pk := stone.packet
+	var i := stone.idx(sub.x >> 1, sub.y >> 1)
+	var bit := (1 if (sub.y & 1) == 1 else 4) << (sub.x & 1)
+	var occupied: int = pk.get_sub(i, TilePacket.K_STONE) | pk.get_sub(i, TilePacket.K_WOOD) | pk.get_sub(i, TilePacket.K_SOIL)
+	if (occupied & bit) != 0:
+		if struct_on and kind != TilePacket.K_SOIL:
+			rooms[observed].sand.structures.stamp(sub.x >> 1, sub.y >> 1, bit)
+			return true
+		return false   # the exact cell holds matter: precise editing refuses
+	pk.set_sub(i, kind, pk.get_sub(i, kind) | bit)
+	if struct_on and kind != TilePacket.K_SOIL:
+		rooms[observed].sand.structures.stamp(sub.x >> 1, sub.y >> 1, bit)
+	return true
+
+## Lay one tool at the hover: liquids dose 255 through the tool path, damp and furniture are tile-level; the solid brushes paint the exact subtile cell under the mouse (world §3 authoring).
 func _apply_tool(t: Vector2i) -> bool:
 	var pk := stone.packet
 	var i := stone.idx(t.x, t.y)
 	match tool:
-		Tool.STONE:
-			if _lay_matter(t, TilePacket.K_STONE):
-				mirrors[observed].sync()
-				return true
-		Tool.WOOD:
-			if _lay_matter(t, TilePacket.K_WOOD):
-				mirrors[observed].sync()
-				return true
-		Tool.SOIL:
-			return _brush_guarded(pk, i, TilePacket.K_SOIL)
+		Tool.STONE_S:
+			return _paint_cell(_hover_sub(), TilePacket.K_STONE)
 		Tool.WOOD_S:
-			return _brush_guarded(pk, i, TilePacket.K_WOOD)
-		Tool.STRUCT:
-			return rooms[observed].sand.structures.fuse(t.x, t.y)
+			return _paint_cell(_hover_sub(), TilePacket.K_WOOD)
+		Tool.SOIL:
+			return _paint_cell(_hover_sub(), TilePacket.K_SOIL)
 		Tool.DAMP:
 			return pk.add_damp(i, 64) > 0
 		Tool.WATER:
@@ -268,7 +308,7 @@ func _read_slot(k: int) -> RoomState:
 	s.sand_ticks = d["st"]
 	return s
 
-## Build the chrome: three buttons (tiles, furniture, inspector) over their pop-up panels -- editor tooling, so default theme and rough edges are fine.
+## Build the chrome: two category buttons and the struct toggle over one blocking overlay menu -- editor tooling, so default theme and rough edges are fine.
 func _build_ui() -> void:
 	ui = CanvasLayer.new()
 	ui.layer = 10
@@ -276,41 +316,50 @@ func _build_ui() -> void:
 	menu_bar = HBoxContainer.new()
 	menu_bar.position = Vector2(2, 2)
 	ui.add_child(menu_bar)
-	panels = [
-		_build_panel(0, [["stone", Tool.STONE], ["wood", Tool.WOOD], ["soil", Tool.SOIL], ["wood_s", Tool.WOOD_S], ["struct", Tool.STRUCT], ["damp", Tool.DAMP], ["water", Tool.WATER], ["oil", Tool.OIL], ["acid", Tool.ACID], ["lava", Tool.LAVA], ["steam", Tool.STEAM], ["smoke", Tool.SMOKE]]),
-		_build_panel(1, [["water source", Tool.SRC_WATER], ["drain", Tool.DRAIN], ["steam vent", Tool.SRC_STEAM], ["open air", Tool.OPEN_AIR]]),
-	]
-	var tiles := _chrome_button("tiles")
-	tiles.pressed.connect(_open_menu.bind(0))
-	menu_bar.add_child(tiles)
-	var furn := _chrome_button("furn")
-	furn.pressed.connect(_open_menu.bind(1))
-	menu_bar.add_child(furn)
-	var info := _chrome_button("info")
-	info.pressed.connect(_toggle_inspector)
-	menu_bar.add_child(info)
-	inspector = PanelContainer.new()
-	inspector.position = Vector2(132, 22)
-	inspector.custom_minimum_size = Vector2(104, 0)
-	inspector.visible = false
-	inspect_label = Label.new()
-	inspect_label.add_theme_font_size_override("font_size", 8)
-	inspector.add_child(inspect_label)
-	ui.add_child(inspector)
+	for k in TOOL_PAGES.size():
+		var cat := _chrome_button("matter" if k == 0 else "furn")
+		cat.pressed.connect(_open_menu.bind(TOOL_PAGES[k]))
+		menu_bar.add_child(cat)
+	struct_button = _chrome_button("struct: off")
+	struct_button.pressed.connect(_toggle_struct)
+	menu_bar.add_child(struct_button)
+	overlay = PanelContainer.new()
+	overlay.visible = false
+	ui.add_child(overlay)
 
-## One pop-up panel of tool buttons under the bar; starts hidden.
-func _build_panel(k: int, entries: Array) -> PanelContainer:
-	var panel := PanelContainer.new()
-	panel.position = Vector2(2 + k * 108, 22)
-	panel.visible = false
-	var box := VBoxContainer.new()
-	panel.add_child(box)
-	for e in entries:
+## Open the blocking overlay menu for one page: the sim pauses until a brush is picked (or the menu is dismissed), and the grid auto-fits roughly square.
+func _open_menu(page: Array) -> void:
+	overlay_pause_saved = paused
+	paused = true
+	for child in overlay.get_children():
+		child.queue_free()
+	var grid := GridContainer.new()
+	grid.columns = ceili(sqrt(page.size() + 1))
+	for e in page:
 		var b := _chrome_button(e[0])
+		b.custom_minimum_size = Vector2(72, 28)
 		b.pressed.connect(_pick_tool.bind(e[1]))
-		box.add_child(b)
-	ui.add_child(panel)
-	return panel
+		grid.add_child(b)
+	var cancel := _chrome_button("cancel")
+	cancel.pressed.connect(_close_menu)
+	grid.add_child(cancel)
+	overlay.add_child(grid)
+	overlay.visible = true
+
+## Close the overlay menu and restore the pause state.
+func _close_menu() -> void:
+	overlay.visible = false
+	paused = overlay_pause_saved
+
+## Pick a tool from the overlay and close it -- one click selects, the strokes follow.
+func _pick_tool(t: int) -> void:
+	tool = t as TestEditor.Tool
+	_close_menu()
+
+## Flip the struct toggle: with it on, the solid brushes author structure membership cell by cell (world §3).
+func _toggle_struct() -> void:
+	struct_on = not struct_on
+	struct_button.text = "struct: on" if struct_on else "struct: off"
 
 ## A small chrome button: 8px font, tight minimum.
 func _chrome_button(label: String) -> Button:
@@ -320,59 +369,14 @@ func _chrome_button(label: String) -> Button:
 	b.custom_minimum_size = Vector2(48, 18)
 	return b
 
-## Toggle one menu: opening hides the other; a second click closes it.
-func _open_menu(k: int) -> void:
-	for p in panels.size():
-		panels[p].visible = (p == k) and not panels[p].visible
-
-## Pick a tool from a menu and close both -- one click selects, the strokes follow.
-func _pick_tool(t: int) -> void:
-	tool = t as TestEditor.Tool
-	for p in panels:
-		p.visible = false
-
-## Toggle the inspector card.
-func _toggle_inspector() -> void:
-	inspector.visible = not inspector.visible
-
 ## True when the mouse sits on the chrome -- strokes are ignored there (raw button state reads true even when a Control consumed the click).
 func _over_ui() -> bool:
 	var p := get_global_mouse_position()
 	if menu_bar.get_global_rect().has_point(p):
 		return true
-	for panel in panels:
-		if panel.visible and panel.get_global_rect().has_point(p):
-			return true
-	return inspector.visible and inspector.get_global_rect().has_point(p)
+	return overlay.visible and overlay.get_global_rect().has_point(p)
 
-## The observed room's witch under the mouse, if any -- her 8x24 hitbox, soles-centered.
-func _hovered_witch() -> Witch:
-	var p := get_global_mouse_position()
-	for witch in room_witches[observed]:
-		if Rect2(witch.position.x - 4.0, witch.position.y - 24.0, 8.0, 24.0).has_point(p):
-			return witch
-	return null
-
-## The HUD line plus the inspector card's live text.
+## The HUD line, plus the subtile hover -- the exact cell the cursor and the brushes read.
 func _update_info(t: Vector2i) -> void:
 	super._update_info(t)
-	_update_inspector(t)
-
-## Refresh the inspector: the hovered witch's thermal state, else the hovered tile's census down to furniture and flow -- the canonical deep readout.
-func _update_inspector(t: Vector2i) -> void:
-	if not inspector.visible:
-		return
-	var witch := _hovered_witch()
-	if witch != null:
-		inspect_label.text = "WITCH  heat %d/64  wet %d/64" % [witch.body.heat, witch.body.wetness]
-		return
-	if t.x < 0:
-		inspect_label.text = ""
-		return
-	var pk := stone.packet
-	var i := stone.idx(t.x, t.y)
-	var txt := "TILE %d,%d  %s" % [t.x, t.y, GridStone.Terrain.keys()[pk.get_terrain(i)].to_lower()]
-	txt += "\nsub s%d d%d w%d  struct %d  damp %d/%d  burn %d  fire %d" % [pk.get_sub(i, TilePacket.K_STONE), pk.get_sub(i, TilePacket.K_SOIL), pk.get_sub(i, TilePacket.K_WOOD), pk.struct_s[i], pk.get_damp(i), pk.damp_capacity(i), rooms[observed].react.get_woodburn(t.x, t.y), pk.get_fire(i)]
-	txt += "\npool w%d o%d a%d l%d m%d v%d  free %d" % [pk.get_pool(i, TilePacket.Mat.WATER), pk.get_pool(i, TilePacket.Mat.OIL), pk.get_pool(i, TilePacket.Mat.ACID), pk.get_pool(i, TilePacket.Mat.LAVA), pk.get_pool(i, TilePacket.Mat.SMOKE), pk.get_pool(i, TilePacket.Mat.STEAM), pk.pool_free(i)]
-	txt += "\nflow %d %s  %s  furn %s" % [water.get_flow_mag(t.x, t.y), GridWater.FlowDir.keys()[water.get_flow_dir(t.x, t.y)].to_lower(), "sealed" if water.is_air_sealed(t.x, t.y) else "vented", TilePacket.DebugTile.keys()[pk.get_debug(i)].to_lower()]
-	inspect_label.text = txt
+	renderer.hover_sub = _hover_sub()

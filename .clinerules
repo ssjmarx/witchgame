@@ -4,9 +4,14 @@
 
 1. `docs/instructions.md` -- the canonical rules file. It governs; what
    follows is only its operational summary.
-2. `docs/world.md` -- design law. When behavior and design disagree, the
-   design docs win and the code is wrong.
-3. `docs/PROJECT_MAP.md` -- auto-generated map of every script and function,
+2. `docs/current_plan.md` -- the working roadmap: what is being built next,
+   with its rulings. The only doc describing future work in detail.
+3. `docs/world.md` -- design law, final-form (current systems + ship-plan;
+   no history). When behavior and design disagree, the design docs win and
+   the code is wrong.
+4. `docs/dev_log.md` -- the development log: session rulings, changelogs,
+   supersessions. Evidence, not law; consult when provenance matters.
+5. `docs/PROJECT_MAP.md` -- auto-generated map of every script and function,
    with docstrings.
 
 ## Non-negotiables on every `.gd` edit (audited by `build_project_map.py`)
