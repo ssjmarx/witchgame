@@ -57,7 +57,7 @@ func _init(terrain: GridStone, field: GridWater) -> void:
 	_cont_d.resize(n)
 	_mat_d.resize(n)
 
-## Capture the desires from settled state, on every redraw (tick, stroke, restore): containment binary -- a tile rests only on stone or FULL liquid (partial liquid is a surface water falls through, never a floor; resting is earned by saturation), everything else falls; covered desires standing water above (a falling stream is not a roof); level is throughput-aware -- the greater of lifted content and this tick's arrivals, so a conveying tile holds little but carries plenty, and the rain never dies mid-column; flow desires follow the export for wet and dry alike; material the majority, held while dry. The tick window stamps only when the tick count advances: strokes never disturb the drop clock.
+## Capture the desires from settled state, on every redraw (tick, stroke, restore): containment binary -- a tile rests only on stone or FULL liquid (partial liquid is a surface water falls through, never a floor; resting is earned by saturation), everything else falls; covered desires standing water above (a falling stream is not a roof); level is throughput-aware -- the greater of lifted content and this tick's arrivals, so a conveying tile holds little but carries plenty, and the rain never dies mid-column; flow desires follow the export for wet and dry alike -- but a flow stamp with no liquid beneath it feeds no level desire, and the rain field draws liquid materials only: rain is never made of gas (world §9); material the majority, held while dry. The tick window stamps only when the tick count advances: strokes never disturb the drop clock.
 func capture() -> void:
 	if water.tick_count != _last_tick:
 		_last_tick = water.tick_count
@@ -86,7 +86,8 @@ func capture() -> void:
 				_level_d[i] = 255 if covered else maxi(lift, mag)
 				_mat_d[i] = _majority(i)
 			else:
-				_level_d[i] = maxi(liq, mag)
+				# liquid's picture only: a flow stamp with no liquid beneath it is gas in transit -- rain is never made of gas (world §9)
+				_level_d[i] = maxi(liq, mag) if liq > 0 else 0
 			if d == GridWater.FlowDir.NONE:
 				_vx_d[i] = 0
 				_vy_d[i] = 0
@@ -117,7 +118,7 @@ func advance(delta_ms: int) -> void:
 		_mat[i] = _mat_d[i]
 	_phase = (_phase + delta_ms) & 0x7FFFFFF   # the clock turns with the frame; a paused room freezes it
 
-## Paint one tile's liquid from the pose, binary: below the body flip the rain field is the whole picture; at or above it the standing-water system -- a quadratic Bezier surface with containment-weighted neighbor edges, a traveling ripple when the flow stirs, current lines through the body, the material stack portioned beneath, the crest dissolving at interior. Geometry reads the pose; mixture reads the pool.
+## Paint one tile's liquid from the pose, binary: below the body flip the rain field is the whole picture (liquid materials only -- a gas-majority tile never rains); at or above it the standing-water system -- a quadratic Bezier surface with containment-weighted neighbor edges, a traveling ripple when the flow stirs, current lines through the body, the material stack portioned beneath, the crest dissolving at interior. Geometry reads the pose; mixture reads the pool.
 @warning_ignore("integer_division")
 func paint(image: Image, x: int, y: int, px: int, py: int) -> void:
 	var i := stone.idx(x, y)
@@ -126,8 +127,9 @@ func paint(image: Image, x: int, y: int, px: int, py: int) -> void:
 		return   # law 1: never water in stone, and no surface to bend where there is no water
 	var cont := _cont[i] >> 4
 	if cont < BODY_FLIP:
-		_draw_drops(image, x, y, px, py, h_mid, _vx[i] >> 4, _vy[i] >> 4, Palette.MAT_CREST[_mat[i]])
-		return   # falling: the rain field, no film, no lines, no middle band
+		if LIQ_DRAW.has(_mat[i]):
+			_draw_drops(image, x, y, px, py, h_mid, _vx[i] >> 4, _vy[i] >> 4, Palette.MAT_CREST[_mat[i]])
+		return   # falling: the rain field (liquid materials only -- a gas-majority tile never rains), no film, no lines, no middle band
 	var vxu := _vx[i] >> 4
 	var vyu := _vy[i] >> 4
 	var mag := clampi(maxi(absi(vxu), absi(vyu)) + (mini(absi(vxu), absi(vyu)) >> 1), 0, 127)

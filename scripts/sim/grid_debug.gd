@@ -27,7 +27,7 @@ func tick() -> void:
 		return
 	for i in width * height:
 		var d := pk.get_debug(i)
-		if d == TilePacket.DebugTile.NONE or TilePacket.FULL_SOLID[pk.get_terrain(i)]:
+		if d == TilePacket.DebugTile.NONE or pk.solid_capacity(i) == 0:
 			continue
 		match d:
 			TilePacket.DebugTile.WATER_SOURCE:

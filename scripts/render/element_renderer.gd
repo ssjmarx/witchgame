@@ -47,7 +47,8 @@ func redraw() -> void:
 	fx.under(image)
 	for y in stone.height:
 		for x in stone.width:
-			if stone.is_solid(x, y):
+			var i := stone.idx(x, y)
+			if stone.is_solid(x, y) or stone.packet.get_sub(i, TilePacket.K_STONE) != 0 or stone.packet.get_sub(i, TilePacket.K_WOOD) != 0:
 				_draw_terrain(x, y)
 	_base.blit_rect(image, Rect2i(0, 0, image.get_width(), image.get_height()), Vector2i.ZERO)
 
@@ -77,20 +78,40 @@ func frame() -> void:
 		_draw_cursor()
 	texture.update(image)
 
-## Paint one solid tile: beveled stone or planked wood -- the terrain face the base layer keeps.
+## Paint one tile's matter face onto the base layer: full 4/4 draws the beveled stone or planked wood face, partial nibbles draw 8×8 quads with lit lips (the soil pattern on the stone and wood banks).
 func _draw_terrain(x: int, y: int) -> void:
 	var px := x * TILE
 	var py := y * TILE
 	var i := stone.idx(x, y)
-	var wood := stone.packet.get_terrain(i) == TilePacket.T.WOOD
-	var fill := Palette.BANK_WOOD[1] if wood else Palette.BANK_STONE[1]
-	var dark := Palette.BANK_WOOD[0] if wood else Palette.BANK_STONE[0]
-	image.fill_rect(Rect2i(px, py, TILE, TILE), fill)
-	image.fill_rect(Rect2i(px, py, TILE, 1), dark)
-	image.fill_rect(Rect2i(px, py, 1, TILE), dark)
-	image.set_pixel(px + 11, py + 11, dark)
-	if wood:
-		image.fill_rect(Rect2i(px, py + 8, TILE, 1), dark)   # the plank seam -- minimal wood identity
+	var stone_n: int = stone.packet.get_sub(i, TilePacket.K_STONE)
+	var wood_n: int = stone.packet.get_sub(i, TilePacket.K_WOOD)
+	if stone_n == 15:
+		_face(px, py, Palette.BANK_STONE, false)
+		return
+	if wood_n == 15:
+		_face(px, py, Palette.BANK_WOOD, true)
+		return
+	for c in SUB_QUADS:
+		var bit: int = c[0]
+		if (stone_n & bit) != 0:
+			_quad(px + c[1], py + c[2], Palette.BANK_STONE)
+		elif (wood_n & bit) != 0:
+			_quad(px + c[1], py + c[2], Palette.BANK_WOOD)
+
+## The full-tile face: filled square, dark seam top and left, the bevel pixel -- and the plank seam for wood.
+func _face(px: int, py: int, bank: Array, planked: bool) -> void:
+	image.fill_rect(Rect2i(px, py, TILE, TILE), bank[1])
+	image.fill_rect(Rect2i(px, py, TILE, 1), bank[0])
+	image.fill_rect(Rect2i(px, py, 1, TILE), bank[0])
+	image.set_pixel(px + 11, py + 11, bank[0])
+	if planked:
+		image.fill_rect(Rect2i(px, py + 8, TILE, 1), bank[0])   # the plank seam -- minimal wood identity
+
+## One 8×8 matter quad: filled, lit lip along its top and left edges.
+func _quad(qx: int, qy: int, bank: Array) -> void:
+	image.fill_rect(Rect2i(qx, qy, 8, 8), bank[1])
+	image.fill_rect(Rect2i(qx, qy, 8, 1), bank[2])
+	image.fill_rect(Rect2i(qx, qy, 1, 8), bank[2])
 
 ## Overlay air pockets, per-segment level lines, and the tile grid (G).
 func _draw_debug() -> void:

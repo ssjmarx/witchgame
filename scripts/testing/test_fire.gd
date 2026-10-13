@@ -7,7 +7,7 @@ extends TestSandbox
 const PAINT_DOSE := 64    # units dosed per tick while the mouse is held
 const DAMP_DOSE := 32     # damp units per tick while the damp ink is held
 
-# demos (rows top-to-bottom): s stone, w water 255, o oil 255, W wood + fuel 255, v steam 255, m smoke 255, . air
+# demos (rows top-to-bottom): s stone fused, w water 255, o oil 255, W wood fused, v steam 255, m smoke 255, . air
 const PRESETS := {
 	KEY_F1: [
 		"WWW",
@@ -104,7 +104,7 @@ func _dose() -> void:
 		Paint.SMOKE:
 			water.add_liquid(t.x, t.y, TilePacket.Mat.SMOKE, PAINT_DOSE)
 		Paint.WOOD:
-			_lay_solid(t, GridStone.Terrain.WOOD)
+			_lay_matter(t, TilePacket.K_WOOD)
 		Paint.SOIL:
 			_brush_soil(t)
 		Paint.DAMP:
@@ -118,7 +118,6 @@ func _clear_world() -> void:
 	sand.clear()
 	react.clear()
 	stone.packet.clear_damp()
-	stone.packet.clear_fuel()
 	stone.packet.clear_fire()
 
 ## Held strokes: RMB erases everything the fire lab can author (the shared verb); LMB force-lays stone (this lab's god hand).
@@ -129,8 +128,10 @@ func _paint_stroke(t: Vector2i) -> bool:
 	if Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT) and paint == Paint.STONE:
 		var i := stone.idx(t.x, t.y)
 		stone.packet.set_sub(i, TilePacket.K_SOIL, 0)
+		stone.packet.set_sub(i, TilePacket.K_WOOD, 0)
 		water.set_water(t.x, t.y, 0)
-		return stone.set_terrain(t.x, t.y, GridStone.Terrain.STONE)
+		stone.packet.set_sub(i, TilePacket.K_STONE, 15)   # the god hand lays bare matter -- unfused, unlike the editor's authored walls
+		return true
 	return false
 
 ## God ignite at the hover tile: fuel catches if its gates pass; bare air sparks; wet fuel hisses.
@@ -186,13 +187,13 @@ func _handle_key(k: int) -> bool:
 func _hint_header() -> String:
 	return "1 stone  2 water  3 oil  4 wood  5 steam  6 smoke  7 soil  8 damp  I ignite  LMB dose  RMB erase\nSPC pause  T step  X clear  G debug  K tests  F1-F5, F7, F9-F12 demos (F6/F8 dead)\narrows move the body   Y/H heat   U/J wetness\n"
 
-## Live readout: the base water line plus the hovered tile's fuel, fire, ignition timer, gases, and damp.
+## Live readout: the base water line plus the hovered tile's burn pool, fire, ignition timer, gases, and damp.
 func _info_line(t: Vector2i) -> String:
 	var info := super(t)
 	if t.x >= 0:
 		var i := stone.idx(t.x, t.y)
-		info += "   fuel %d   fire %d   ign %d   steam %d   smoke %d   damp %d/%d" % [
-			stone.packet.get_fuel(i), stone.packet.get_fire(i), react.get_ignition(t.x, t.y),
+		info += "   burn %d   fire %d   ign %d   steam %d   smoke %d   damp %d/%d" % [
+			react.get_woodburn(t.x, t.y), stone.packet.get_fire(i), react.get_ignition(t.x, t.y),
 			stone.packet.get_pool(i, TilePacket.Mat.STEAM),
 			stone.packet.get_pool(i, TilePacket.Mat.SMOKE),
 			stone.packet.get_damp(i), stone.packet.damp_capacity(i)]
@@ -206,19 +207,17 @@ func _load_preset(keycode: int) -> void:
 	stone.clear()
 	react.clear()
 	stone.packet.clear_damp()
-	stone.packet.clear_fuel()
 	stone.packet.clear_fire()
-	_carve_preset(stone, water, PRESETS[keycode])
+	_carve_preset(stone, water, PRESETS[keycode], sand.structures)
 	paused = false
 	renderer.redraw()
 
-## Fire-lab conservation policy: water, steam, and damp are one closed trio (boil and condensation trade inside it); fuel and oil burn to smoke at 4:1 as a production rate -- smoke never shrinks, and never grows faster than four per unit burned.
-func drift_report(w0: PackedInt32Array, pk: TilePacket) -> String:
+## Fire-lab conservation policy: water, steam, and damp are one closed trio (boil and condensation trade inside it); the burn pool and oil burn to smoke at 4:1 as a production rate -- smoke never shrinks, and never grows faster than four per unit burned.
+func drift_report(w0: PackedInt32Array, pk: TilePacket, react: GridReactions = null) -> String:
 	var trio := (w0[TilePacket.Mat.WATER] - pk.mat_total(TilePacket.Mat.WATER)) \
 			+ (w0[TilePacket.Mat.STEAM] - pk.mat_total(TilePacket.Mat.STEAM)) \
 			+ (w0[TilePacket.MAT_COUNT] - pk.damp_total())
-	var burned := (w0[TilePacket.MAT_COUNT + 1] - pk.fuel_total()) \
-			+ (w0[TilePacket.Mat.OIL] - pk.mat_total(TilePacket.Mat.OIL))
+	var burned := react.burned_units if react != null else 0
 	var smoke_made := pk.mat_total(TilePacket.Mat.SMOKE) - w0[TilePacket.Mat.SMOKE]
 	var parts := PackedStringArray()
 	if trio != 0:
@@ -238,12 +237,12 @@ func run_gas_tests() -> void:
 	drift_watch = true
 	var check_fuel_books := func(s: Array) -> String:
 		var pk: TilePacket = s[0].packet
-		if pk.fuel_total() != 510:
-			return "fuel total %d, want 510 — the carve or the ledger is lying" % pk.fuel_total()
+		if s[3].total(TilePacket.K_WOOD) != 8:
+			return "wood mass %d, want 8 -- the carve or the ledger is lying" % s[3].total(TilePacket.K_WOOD)
 		var o0: Vector2i = s[2]
 		for dx in 2:
-			if pk.get_terrain(pk.idx(o0.x + dx, o0.y)) != TilePacket.T.WOOD:
-				return "wood terrain did not survive the run at column %d" % dx
+			if pk.get_sub(pk.idx(o0.x + dx, o0.y), TilePacket.K_WOOD) != 15:
+				return "wood did not survive the run at column %d" % dx
 		return ""
 
 	var check_rise := func(s: Array) -> String:
@@ -348,7 +347,7 @@ func run_gas_tests() -> void:
 			return "smoke hopped past the rim on tick one -- the hop outranks lateral again"
 		return ""
 
-	_run_example("GT0  fuel books and wood survives a run", PRESETS[KEY_F9], check_fuel_books, Callable())
+	_run_example("GT0  wood books and survives a run", PRESETS[KEY_F9], check_fuel_books, Callable())
 	_run_example("GT1  steam rises and pools under a ceiling", PRESETS[KEY_F1], check_rise, Callable())
 	_run_example("GT2  pinned gas levels along the ceiling", PRESETS[KEY_F2], check_spread, Callable())
 	_run_example("GT3  steam bubbles up, then rains back", PRESETS[KEY_F3], check_cycle, Callable())
@@ -367,6 +366,7 @@ func run_gas_tests() -> void:
 func run_fire_tests() -> void:
 	print("== fire self-tests ==")
 	drift_watch = false   # fire creates smoke inside the tick; the end-state policy books it, the per-engine watch cannot
+	wood_burns = true     # burning wood consumes kind-2 mass -- the smoke ceiling books the burn instead
 	var setup_ignite_end := func(s: Array) -> void:
 		var r: GridReactions = s[4]
 		var o: Vector2i = s[2]
@@ -405,10 +405,10 @@ func run_fire_tests() -> void:
 		var o: Vector2i = s[2]
 		for dx in 8:
 			var i := pk.idx(o.x + dx, o.y)
-			if pk.get_terrain(i) != TilePacket.T.AIR:
-				return "beam tile %d did not burn through to air" % dx
-			if pk.get_fuel(i) != 0 or pk.get_fire(i) != 0:
-				return "beam tile %d holds fuel %d fire %d" % [dx, pk.get_fuel(i), pk.get_fire(i)]
+			if pk.get_sub(i, TilePacket.K_WOOD) != 0:
+				return "beam tile %d did not burn through" % dx
+			if pk.get_fire(i) != 0:
+				return "beam tile %d holds fire %d" % [dx, pk.get_fire(i)]
 		if pk.mat_total(TilePacket.Mat.SMOKE) != 8 * 255 * 4:
 			return "vented smoke %d, want %d exactly" % [pk.mat_total(TilePacket.Mat.SMOKE), 8 * 255 * 4]
 		return ""
@@ -419,25 +419,25 @@ func run_fire_tests() -> void:
 		var iw := pk.idx(o.x + 1, o.y + 3)
 		if pk.get_fire(iw) != 0:
 			return "fire still alive in the sealed niche"
-		if pk.get_terrain(iw) != TilePacket.T.WOOD:
-			return "the niche wood burned through — it should have choked first"
-		var fuel := pk.get_fuel(iw)
-		if fuel < 96 or fuel > 160:
-			return "choked fuel %d, want 96..160" % fuel
+		if pk.get_sub(iw, TilePacket.K_WOOD) == 0:
+			return "the niche wood burned through -- it should have choked first"
+		var pool: int = s[4].get_woodburn(o.x + 1, o.y + 3)
+		if pool < 64 or pool > 128:
+			return "choked burn pool %d, want 64..128 -- the smother pause lets it burn past the old choke" % pool
 		if pk.mat_total(TilePacket.Mat.SMOKE) < 480:
-			return "the niche holds only %d smoke — it did not fill" % pk.mat_total(TilePacket.Mat.SMOKE)
+			return "the niche holds only %d smoke -- it did not fill" % pk.mat_total(TilePacket.Mat.SMOKE)
 		return ""
 
 	var check_refuse := func(s: Array) -> String:
 		var pk: TilePacket = s[0].packet
 		var o: Vector2i = s[2]
-		if pk.get_terrain(pk.idx(o.x, o.y)) != TilePacket.T.AIR:
+		if pk.get_sub(pk.idx(o.x, o.y), TilePacket.K_WOOD) != 0:
 			return "the dry log did not burn out"
 		var iw := pk.idx(o.x + 1, o.y)
 		if pk.get_damp(iw) != 0:
 			return "the siege never dried the log (damp %d)" % pk.get_damp(iw)
-		if pk.get_terrain(iw) != TilePacket.T.WOOD or pk.get_fuel(iw) != 255 or pk.get_fire(iw) != 0:
-			return "the wet log did not survive intact (fuel %d fire %d)" % [pk.get_fuel(iw), pk.get_fire(iw)]
+		if pk.get_sub(iw, TilePacket.K_WOOD) != 15 or pk.get_fire(iw) != 0:
+			return "the wet log did not survive intact (wood %d fire %d)" % [pk.get_sub(iw, TilePacket.K_WOOD), pk.get_fire(iw)]
 		return ""
 
 	var check_siege := func(s: Array) -> String:
@@ -445,8 +445,8 @@ func run_fire_tests() -> void:
 		var o: Vector2i = s[2]
 		for dx in 3:
 			var i := pk.idx(o.x + dx, o.y)
-			if pk.get_terrain(i) != TilePacket.T.AIR or pk.get_fuel(i) != 0:
-				return "tile %d did not burn through (fuel %d)" % [dx, pk.get_fuel(i)]
+			if pk.get_sub(i, TilePacket.K_WOOD) != 0:
+				return "tile %d did not burn through" % dx
 		return ""
 
 	var check_tier := func(s: Array) -> String:
@@ -477,7 +477,7 @@ func run_fire_tests() -> void:
 		var o: Vector2i = s[2]
 		for ty in 5:
 			var i := pk.idx(o.x, o.y + ty)
-			if pk.get_terrain(i) != TilePacket.T.AIR or pk.get_fuel(i) != 0:
+			if pk.get_sub(i, TilePacket.K_WOOD) != 0:
 				return "wall row %d did not burn through" % ty
 		return ""
 
@@ -485,14 +485,14 @@ func run_fire_tests() -> void:
 		var pk: TilePacket = s[0].packet
 		var o: Vector2i = s[2]
 		var f2 := pk.get_fire(pk.idx(o.x + 2, o.y))
-		if f2 != 1:
-			return "third tile fire nibble %d, want 1 (caught this tick, no engulf yet)" % f2
+		if f2 != 4:
+			return "third tile fire nibble %d, want 4 (caught early at its breathing cell, fully engulfed)" % f2
 		if pk.get_fire(pk.idx(o.x + 3, o.y)) != 0:
 			return "fourth tile already carries fire — the front is running hot"
-		var fuel0 := pk.get_fuel(pk.idx(o.x, o.y))
-		var fuel1 := pk.get_fuel(pk.idx(o.x + 1, o.y))
-		if fuel0 != 15 or fuel1 != 135:
-			return "pace fuels %d/%d, want 15/135 (ten and five burns)" % [fuel0, fuel1]
+		var burn0: int = s[4].get_woodburn(o.x, o.y)
+		var burn1: int = s[4].get_woodburn(o.x + 1, o.y)
+		if burn0 != 15 or burn1 != 135:
+			return "pace pools %d/%d, want 15/135 (ten burns and one starved pause, five burns)" % [burn0, burn1]
 		return ""
 	
 	var setup_niche := func(s: Array) -> void:
@@ -503,7 +503,8 @@ func run_fire_tests() -> void:
 	var setup_crack := func(s: Array) -> void:
 		var pk: TilePacket = s[0].packet
 		var o: Vector2i = s[2]
-		pk.set_sub(pk.idx(o.x + 3, o.y + 1), TilePacket.K_STONE, 15)
+		# the pillar is wood_s: it seals the corner and insulates -- a stone pillar would condense the slot dry (world §3)
+		pk.set_sub(pk.idx(o.x + 3, o.y + 1), TilePacket.K_WOOD, 15)
 	var check_crack := func(s: Array) -> String:
 		var pk: TilePacket = s[0].packet
 		var o: Vector2i = s[2]
@@ -535,7 +536,7 @@ func run_fire_tests() -> void:
 	var check_jam := func(s: Array) -> String:
 		var pk: TilePacket = s[0].packet
 		var o: Vector2i = s[2]
-		if pk.get_fuel(pk.idx(o.x + 1, o.y + 3)) == 255:
+		if s[4].get_woodburn(o.x + 1, o.y + 3) == 255:
 			return "the fire never ran"
 		var pocket := pk.get_pool(pk.idx(o.x + 3, o.y + 2), TilePacket.Mat.SMOKE)
 		if pocket < 16:

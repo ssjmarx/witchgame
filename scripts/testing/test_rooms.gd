@@ -82,12 +82,12 @@ func _paint_stroke(t: Vector2i) -> bool:
 		return true
 	match paint:
 		Paint.STONE:
-			return _lay_solid(t, GridStone.Terrain.STONE)
+			return _lay_matter(t, TilePacket.K_STONE)
 		Paint.WATER:
 			water.set_water(t.x, t.y, 255)
 			return true
 		Paint.WOOD:
-			return _lay_solid(t, GridStone.Terrain.WOOD)
+			return _lay_matter(t, TilePacket.K_WOOD)
 	return false
 
 ## Re-point the harness aliases at the observed room, hide the other sprite, redraw once -- a TAB while paused must show the frozen truth.
@@ -120,7 +120,7 @@ func _load_preset(keycode: int) -> void:
 	baselines.clear()
 	var rows := _preset_rows(keycode)
 	for i in rooms.size():
-		_carve_preset(rooms[i].stone, rooms[i].water, rows)
+		_carve_preset(rooms[i].stone, rooms[i].water, rows, rooms[i].sand.structures)
 		baselines.append(rooms[i].snapshot())
 	renderer.redraw()
 
@@ -154,8 +154,9 @@ func _info_line(t: Vector2i) -> String:
 		var pk := r.stone.packet
 		var i := r.stone.idx(t.x, t.y)
 		info += "   tile %d,%d   water %3d" % [t.x, t.y, pk.get_pool(i, TilePacket.Mat.WATER)]
-		if pk.get_fuel(i) > 0 or pk.get_fire(i) != 0:
-			info += "   fuel %3d   fire %d   ign %d" % [pk.get_fuel(i), pk.get_fire(i), r.react.get_ignition(t.x, t.y)]
+		var burn := r.react.get_woodburn(t.x, t.y)
+		if burn > 0 or pk.get_fire(i) != 0:
+			info += "   burn %3d   fire %d   ign %d" % [burn, pk.get_fire(i), r.react.get_ignition(t.x, t.y)]
 	return info
 
 ## The rooms lab's example set: the room-machinery examples in order.
@@ -174,7 +175,7 @@ func run_room_tests() -> void:
 ## RT1: soak water into soil for 300 ticks, restore, and prove three things -- the ledger lands green outside a tick, the census returns byte-exact, and the baseline survives later ticks (the aliasing canary: a restore that pointed at stored arrays instead of copies would drift with the world).
 func _rt_restore_exact() -> String:
 	var r := Room.new(GRID_W, GRID_H, 11)
-	_carve_preset(r.stone, r.water, ["ww", "ww", "dd", "dd"])
+	_carve_preset(r.stone, r.water, ["ww", "ww", "dd", "dd"], r.sand.structures)
 	var base := r.snapshot()
 	for _t in 300:
 		r.tick()
@@ -197,17 +198,17 @@ func _rt_restore_exact() -> String:
 ## RT2: ignite a wood platform, burn 150 ticks -- holes open, smoke vents -- then restore: fuel, terrain, fire bits, and ignition progress all return to the authored state.
 func _rt_fire_forgive() -> String:
 	var r := Room.new(GRID_W, GRID_H, 12)
-	var origin := _carve_preset(r.stone, r.water, ["WWWW", "WWWW"])
+	var origin := _carve_preset(r.stone, r.water, ["WWWW", "WWWW"], r.sand.structures)
 	var base := r.snapshot()
 	if not r.react.ignite(origin.x, origin.y):
 		return "god-hand ignite refused"
 	for _t in 150:
 		r.tick()
-	if r.stone.packet.fuel_total() >= 8 * 255:
+	if r.sand.total(TilePacket.K_WOOD) >= 32:
 		return "nothing burned -- vacuous"
 	r.restore(base)
-	if r.stone.packet.fuel_total() != 8 * 255:
-		return "spent fuel did not return"
+	if r.sand.total(TilePacket.K_WOOD) != 32:
+		return "burned matter did not return"
 	if r.stone.packet.has_fire():
 		return "fire bits survived the restore"
 	if r.react.get_ignition(origin.x, origin.y) != 0:
@@ -220,8 +221,8 @@ func _rt_fire_forgive() -> String:
 func _rt_freeze() -> String:
 	var a := Room.new(GRID_W, GRID_H, 13)
 	var b := Room.new(GRID_W, GRID_H, 14)
-	_carve_preset(a.stone, a.water, ["www", "www"])
-	_carve_preset(b.stone, b.water, ["www", "www"])
+	_carve_preset(a.stone, a.water, ["www", "www"], a.sand.structures)
+	_carve_preset(b.stone, b.water, ["www", "www"], b.sand.structures)
 	var a0 := a.snapshot()
 	b.tick()
 	var frozen := b.snapshot()
@@ -239,8 +240,8 @@ func _rt_freeze() -> String:
 func _rt_same_seed() -> String:
 	var r1 := Room.new(GRID_W, GRID_H, 7)
 	var r2 := Room.new(GRID_W, GRID_H, 7)
-	_carve_preset(r1.stone, r1.water, ["www", "www"])
-	_carve_preset(r2.stone, r2.water, ["www", "www"])
+	_carve_preset(r1.stone, r1.water, ["www", "www"], r1.sand.structures)
+	_carve_preset(r2.stone, r2.water, ["www", "www"], r2.sand.structures)
 	for _t in 500:
 		r1.tick()
 		r2.tick()

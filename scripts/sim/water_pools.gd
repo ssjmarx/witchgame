@@ -47,7 +47,7 @@ func headroom_above(x: int, y: int) -> bool:
 	var yy := y - 1
 	while yy >= 0:
 		var i := pk.idx(x, yy)
-		if TilePacket.FULL_SOLID[pk.get_terrain(i)]:
+		if pk.solid_capacity(i) == 0:
 			return false
 		if pk.pool_free(i) > 0 and labels.escape_at(i):
 			return true
@@ -61,7 +61,7 @@ func eject_lightest_up(i: int, amount: int) -> int:
 	var yy := p.y - 1
 	while remaining > 0 and yy >= 0:
 		var h := pk.idx(p.x, yy)
-		if TilePacket.FULL_SOLID[pk.get_terrain(h)]:
+		if pk.solid_capacity(h) == 0:
 			break
 		var moved := 0
 		if labels.escape_at(h):

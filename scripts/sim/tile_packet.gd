@@ -7,18 +7,19 @@ extends RefCounted
 
 # -- Enumerations ------------------------------------------------------------
 
-## Terrain moves here; GridStone re-exports the names for compatibility.
-enum T { AIR, STONE, WOOD, SOIL, BRAZIER, SPIKE, DOOR, DOOR_CLOSED }
+## Terrain moves here; GridStone re-exports the names for compatibility. AIR plus the
+## fixtures only since the retirement cut -- STONE, WOOD, and SOIL terrain became matter.
+enum T { AIR, BRAZIER, SPIKE, DOOR, DOOR_CLOSED }
 
 ## The content pool (world.md §2). Enum order == density-table order below.
 enum Mat { WATER, OIL, ACID, LAVA, SMOKE, STEAM }
 const MAT_COUNT := 6
 
 ## Ledger rows. The first six line up with Mat; the three subtile rows
-## follow in column order (stone_s, soil_s, wood_s) == SUB_SINK order; FUEL
-## closes the book (appended, never inserted -- row indices are arithmetic).
-enum Led { WATER, OIL, ACID, LAVA, SMOKE, STEAM, STONE_S, SOIL_S, WOOD_S, DAMP, FUEL }
-const LED_COUNT := 11
+## follow in column order (stone_s, soil_s, wood_s) == SUB_SINK order. FUEL
+## retired at the cut -- the burn pool rides the reaction overlay (world §3).
+enum Led { WATER, OIL, ACID, LAVA, SMOKE, STEAM, STONE_S, SOIL_S, WOOD_S, DAMP }
+const LED_COUNT := 10
 
 ## Debug furniture (the editor lab, world.md §3): sources and sinks as room markers -- live during play, authored outside the play area in finished rooms.
 enum DebugTile { NONE, WATER_SOURCE, DRAIN, STEAM_VENT, OPEN_AIR }
@@ -33,17 +34,23 @@ const DENSITY: Array[int] = [30, 20, 40, 50, 10, 5]
 ## steam out-climbs acid's sink 8:1.
 const SORT_RATE: Array[int] = [2, 2, 1, 1, 3, 8]          # <tune>
 
-## Loose-subtile buoyancy through liquid, subtile-steps per tick, indexed by
-## column order [stone_s, soil_s, wood_s]. Negative = floats (wood rests buoyant until the weights system).
-const SUB_SINK: Array[int] = [2, 1, -1]                   # <tune>
+## Sink rate through LIQUID for each subtile kind, subtile-steps per tick, column order
+## [stone_s, soil_s, wood_s]. The rest/fall decision reads SUB_DENSITY against DENSITY --
+## a solid rests in any pool material denser than itself (world §3); this table is the rate once sinking.
+const SUB_SINK: Array[int] = [2, 1, -1]                   # <tune> — wood's entry documents the floater; the decision is density, not this row
+
+## Subtile-kind densities on the DENSITY scale -- the medium rule (world §3): a solid rests in
+## any pool material denser than itself and falls through the lighter, gas included. Stone and
+## soil sink through everything; wood floats on every liquid and falls through both gases.
+const SUB_DENSITY: Array[int] = [60, 55, 15]              # stone_s, soil_s, wood_s -- <tune>
 
 ## Per-material viscosity: throughput cap on every flow move (units per tick, per rule application). 255 = unthrottled, water-fast. The cap never changes an equilibrium -- only the pace of arriving -- and never binds for water (pool bytes cap at 255).
 const VISCOSITY: Array[int] = [255, 32, 255, 16, 255, 255]   # water oil acid lava smoke steam; <tune>
 
 # -- Rule tables -------------------------------------------------------------
 
-## FULL_SOLID[T] -- full-tile terrain holds no pool (capacity 0).
-const FULL_SOLID: Array[bool] = [false, true, true, false, true, true, true, true]
+## FULL_SOLID[T] -- fixture terrain (braziers, spikes, doors) holds no pool and blocks everything; matter walls read the same through solid_capacity.
+const FULL_SOLID: Array[bool] = [false, true, true, true, true]
 
 ## POPCOUNT[nibble] -- bits set, for subtile mass and capacity math.
 const POPCOUNT: Array[int] = [0, 1, 1, 2, 1, 2, 2, 3, 1, 2, 2, 3, 2, 3, 3, 4]
@@ -58,7 +65,8 @@ const K_SOIL := 1
 const K_WOOD := 2
 
 const DAMP_PER_SUB := 32   # damp capacity per soil subtile (ruling: 1:1 with water and steam)
-const WOOD_DAMP_CAP := 64   # a wood tile holds damp flat -- half a full soil tile (128); render-darkens past half
+const DAMP_WOOD_PER_SUB := 16   # damp capacity per wood_s subtile since the cut -- half a soil subtile; replaces the retired WOOD_DAMP_CAP
+const BURN_POOL_PER_SUB := 64   # fuel-equivalents per wood_s subtile in the burn pool -- the flat per-subtile timer the doc promises
 const TAG_WET := 1        # body-tag bits; poisoned/tainted/holy/fertile arrive with the body-state system
 
 # -- Columns -----------------------------------------------------------------
@@ -70,7 +78,6 @@ var terrain := PackedByteArray()
 var stone_s := PackedByteArray()
 var soil_s := PackedByteArray()
 var wood_s := PackedByteArray()
-
 var water := PackedByteArray()
 var oil := PackedByteArray()
 var acid := PackedByteArray()
@@ -79,10 +86,9 @@ var smoke := PackedByteArray()
 var steam := PackedByteArray()
 var damp := PackedByteArray()
 var tags := PackedByteArray()
-var fuel := PackedByteArray()    # burnable energy attached to solids -- outside the pool, own ledger row
 var fire_s := PackedByteArray()  # fire subtile bits -- overlay state: unbooked, displaces nothing
 var debug_s := PackedByteArray()  # debug furniture markers -- overlay state: unbooked, census column fifteen (the editor lab)
-var struct_s := PackedByteArray()  # structure membership nibble-pairs over the subtile layout -- overlay state: unbooked, census column sixteen (the bedrock lab); a set bit fuses that cell into an authored structure
+var struct_s := PackedByteArray()  # structure membership nibble-pairs over the subtile layout -- overlay state: unbooked, census column fifteen since the retirement cut (the bedrock lab); a set bit fuses that cell into an authored structure
 var actor_s := PackedByteArray()
 
 var _booked := PackedInt64Array()   # ledger: booked totals, one per row
@@ -96,7 +102,7 @@ func _init(p_w: int, p_h: int) -> void:
 	w = p_w
 	h = p_h
 	var n := w * h
-	# Seventeen boring resizes, no clever loop: a packed array passed through a temporary may not resize the member. Boring is bulletproof.
+	# Sixteen boring resizes, no clever loop: a packed array passed through a temporary may not resize the member. Boring is bulletproof.
 	terrain.resize(n)
 	stone_s.resize(n)
 	soil_s.resize(n)
@@ -111,7 +117,6 @@ func _init(p_w: int, p_h: int) -> void:
 	_present.resize(MAT_COUNT)
 	damp.resize(n)
 	tags.resize(n)
-	fuel.resize(n)
 	fire_s.resize(n)
 	debug_s.resize(n)
 	struct_s.resize(n)
@@ -134,7 +139,6 @@ func clear() -> void:
 	_present.fill(0)
 	damp.fill(0)
 	tags.fill(0)
-	fuel.fill(0)
 	fire_s.fill(0)
 	debug_s.fill(0)
 	struct_s.fill(0)
@@ -355,11 +359,6 @@ func assert_all() -> bool:
 	if s_wood != _booked[Led.WOOD_S]:
 		push_error("ledger drift WOOD_S: booked %d, counted %d" % [_booked[Led.WOOD_S], s_wood])
 		ok = false
-	var s_fuel := 0
-	for v in fuel: s_fuel += v
-	if s_fuel != _booked[Led.FUEL]:
-		push_error("ledger drift FUEL: booked %d, counted %d" % [_booked[Led.FUEL], s_fuel])
-		ok = false
 	var s_damp := damp_total()
 	if s_damp != _booked[Led.DAMP]:
 		push_error("ledger drift DAMP: booked %d, counted %d" % [_booked[Led.DAMP], s_damp])
@@ -420,11 +419,9 @@ func clear_mat(m: int) -> void:
 func get_damp(i: int) -> int:
 	return damp[i]
 
-## Damp capacity at tile i: 32 per soil subtile; a WOOD tile holds a flat 64 (half a full soil tile); everything else holds none.
+## Damp capacity at tile i: 32 per soil subtile plus 16 per wood_s subtile since the cut; fixtures and bare air hold none.
 func damp_capacity(i: int) -> int:
-	if terrain[i] == T.WOOD:
-		return WOOD_DAMP_CAP
-	return DAMP_PER_SUB * POPCOUNT[soil_s[i]]
+	return DAMP_PER_SUB * POPCOUNT[soil_s[i]] + DAMP_WOOD_PER_SUB * POPCOUNT[wood_s[i]]
 
 ## Add up to amount of damp, clamped by capacity; returns units accepted (callers pre-compute, refused units are theirs).
 func add_damp(i: int, amount: int) -> int:
@@ -495,45 +492,7 @@ func booked_pool_total() -> int:
 		sum += _booked[m]
 	return sum
 
-# -- Fuel and fire -----------------------------------------------------------
-
-## Fuel held at tile i (0..255) -- burnable energy attached to solids, outside the content pool.
-func get_fuel(i: int) -> int:
-	return fuel[i]
-
-## Add up to amount of fuel at tile i, clamped to the 255 ceiling; returns units accepted.
-func add_fuel(i: int, amount: int) -> int:
-	if amount <= 0:
-		return 0
-	var accepted := mini(amount, POOL_MAX - fuel[i])
-	if accepted > 0:
-		fuel[i] += accepted
-		_book(Led.FUEL, accepted)
-	return accepted
-
-## Remove up to amount of fuel at tile i; returns units actually taken.
-func take_fuel(i: int, amount: int) -> int:
-	if amount <= 0:
-		return 0
-	var taken := mini(amount, fuel[i])
-	if taken > 0:
-		fuel[i] -= taken
-		_book(Led.FUEL, -taken)
-	return taken
-
-## Tool path (paint/erase): force tile i's fuel toward v, booked; 255 is the only ceiling, so no spill exists.
-func set_fuel(i: int, v: int) -> void:
-	var target := clampi(v, 0, POOL_MAX)
-	var delta := target - fuel[i]
-	if delta != 0:
-		fuel[i] = target
-		_book(Led.FUEL, delta)
-
-## Fresh recount of the fuel column -- row eleven's checksum.
-func fuel_total() -> int:
-	var sum := 0
-	for v in fuel: sum += v
-	return sum
+# -- Fire ---------------------------------------------------------------------
 
 ## Fire subtile bits at tile i, same nibble layout as the solid kinds; overlay state -- coexists with terrain, solid subtiles, and pool alike.
 func get_fire(i: int) -> int:
@@ -554,11 +513,6 @@ func set_fire(i: int, n: int) -> void:
 ## True when any tile holds fire bits -- the fire solver's absent-pass gate, _present's pattern.
 func has_fire() -> bool:
 	return _fire_present > 0
-
-## Zero the fuel column, booking the removal. (Clear/reset path.)
-func clear_fuel() -> void:
-	_book(Led.FUEL, -fuel_total())
-	fuel.fill(0)
 
 ## Zero the fire nibbles and the present count. (Clear/reset path — overlay state, nothing booked.)
 func clear_fire() -> void:
@@ -589,8 +543,41 @@ func has_structures() -> bool:
 
 # -- Snapshot census (world.md §8) ------------------------------------------
 
-## The persistent column count -- the snapshot census: terrain, three subtile nibbles, six pool, damp, tags, fuel, fire bits, debug furniture, structure membership.
-const COL_COUNT := 16
+## The persistent column count -- the snapshot census: terrain, three subtile nibbles, six pool, damp, tags, fire bits, debug furniture, structure membership (FUEL left at the retirement cut).
+const COL_COUNT := 15
+
+## Rewrite a legacy census (fifteen columns before the structure pass, sixteen before the retirement cut) into the current fifteen: authored STONE, WOOD, and SOIL terrain convert to 4/4 matter and pre-fused membership, fixture indices renumber, the fuel column drops, and damp clamps to the new per-subtile capacity. Pure on the bytes; the caller rebuilds books and present counts.
+func migrate_legacy_cols(cols: Array, p_w: int, p_h: int) -> Array:
+	var n := p_w * p_h
+	var terrain_c: PackedByteArray = cols[0].duplicate()
+	var stone_c: PackedByteArray = cols[1].duplicate()
+	var soil_c: PackedByteArray = cols[2].duplicate()
+	var wood_c: PackedByteArray = cols[3].duplicate()
+	var damp_c: PackedByteArray = cols[10].duplicate()
+	var struct_c := PackedByteArray()
+	struct_c.resize(n)
+	if cols.size() > COL_COUNT:
+		struct_c = cols[COL_COUNT].duplicate()   # a Stage 2 save's membership rides along; an older save starts structure-free
+	for i in n:
+		match terrain_c[i]:
+			1:   # legacy STONE
+				terrain_c[i] = T.AIR
+				stone_c[i] |= 15
+				struct_c[i] |= 15
+			2:   # legacy WOOD
+				terrain_c[i] = T.AIR
+				wood_c[i] |= 15
+				struct_c[i] |= 15
+			3:   # legacy SOIL -- never authored, converted for completeness
+				terrain_c[i] = T.AIR
+				soil_c[i] |= 15
+			4, 5, 6, 7:   # legacy fixtures renumber around the retired kinds
+				terrain_c[i] = terrain_c[i] - 3
+			_:
+				pass
+		var cap := DAMP_PER_SUB * POPCOUNT[soil_c[i]] + DAMP_WOOD_PER_SUB * POPCOUNT[wood_c[i]]
+		damp_c[i] = mini(damp_c[i], cap)
+	return [terrain_c, stone_c, soil_c, wood_c, cols[4].duplicate(), cols[5].duplicate(), cols[6].duplicate(), cols[7].duplicate(), cols[8].duplicate(), cols[9].duplicate(), damp_c, cols[11].duplicate(), cols[13].duplicate(), cols[14].duplicate(), struct_c]
 
 ## Live reference to persistent column i, census order (0..COL_COUNT-1) -- duplicate before storing it anywhere: packed arrays are references.
 func column(i: int) -> PackedByteArray:
@@ -607,9 +594,8 @@ func column(i: int) -> PackedByteArray:
 		9: return steam
 		10: return damp
 		11: return tags
-		12: return fuel
-		13: return fire_s
-		14: return debug_s
+		12: return fire_s
+		13: return debug_s
 		_: return struct_s
 
 ## Point persistent column i at bytes (restore path); the write bypasses books, present counts, and fire_present -- the caller rebuilds them.
@@ -627,9 +613,8 @@ func load_column(i: int, b: PackedByteArray) -> void:
 		9: steam = b
 		10: damp = b
 		11: tags = b
-		12: fuel = b
-		13: fire_s = b
-		14: debug_s = b
+		12: fire_s = b
+		13: debug_s = b
 		_: struct_s = b
 
 ## Recompute every booked row from fresh recounts -- the restore path's ledger rebuild; green asserts prove maintained == recounted, so this arrives consistent.
@@ -639,7 +624,6 @@ func rebuild_books() -> void:
 	for k in 3:
 		_booked[Led.STONE_S + k] = sub_total(k)
 	_booked[Led.DAMP] = damp_total()
-	_booked[Led.FUEL] = fuel_total()
 
 ## Recompute the present counts from the columns -- the absent-pass gates' bookkeeping, bypassed by wholesale restore writes; restore-time only, never per tick.
 func rebuild_present() -> void:

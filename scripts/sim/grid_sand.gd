@@ -145,12 +145,14 @@ func _sub_pass(sx: int, sy: int) -> void:
 	if code == EMPTY:
 		return
 	var kind := code - 1
+	var bit := (1 if (sy & 1) == 1 else 4) << (sx & 1)
 	# authorship freezes: a membership bit sits the pass out, and soil never carries one
-	if pk.has_structures() and kind != TilePacket.K_SOIL:
-		var bit := (1 if (sy & 1) == 1 else 4) << (sx & 1)
-		if (pk.struct_s[idx(sx >> 1, sy >> 1)] & bit) != 0:
-			return
-	var d := FALL[kind] if not _in_liquid(sx, sy) else TilePacket.SUB_SINK[kind]
+	if pk.has_structures() and kind != TilePacket.K_SOIL and (pk.struct_s[idx(sx >> 1, sy >> 1)] & bit) != 0:
+		return
+	# fire pins its fuel: a burning subtile does not move -- the ember burns out where it lies, and what it leaves behind falls (world §3)
+	if (pk.get_fire(idx(sx >> 1, sy >> 1)) & bit) != 0:
+		return
+	var d := _medium_rate(idx(sx >> 1, sy >> 1), kind)
 	if d <= 0:
 		return
 	var flip := -1 if (tick_count % 2 == 0) else 1
@@ -188,13 +190,13 @@ func _try_move(sx: int, sy: int, tx: int, ty: int, kind: int) -> bool:
 		_cross_tile(sx, sy, tx, ty, kind)
 	return true
 
-## Corner rule: the side cell must hold no subtile of any kind and sit in pool-capable terrain.
+## Corner rule: the side cell must hold no subtile of any kind and sit in pool-capable ground.
 func _side_clear(sx: int, sy: int) -> bool:
 	if sx < 0 or sx >= width * 2:
 		return false
 	if _sub[sy * width * 2 + sx] != EMPTY:
 		return false
-	return not TilePacket.FULL_SOLID[pk.get_terrain(idx(sx >> 1, sy >> 1))]
+	return pk.solid_capacity(idx(sx >> 1, sy >> 1)) > 0
 
 ## Count subtile cells currently in tile (x, y) per the live expanded grid -- pre-repack truth, so same-pass landings are not missed. Caller guarantees in-bounds.
 func _cells_in_tile(x: int, y: int) -> int:
@@ -207,9 +209,9 @@ func _cells_in_tile(x: int, y: int) -> int:
 	if _sub[base + w2 + 1] != EMPTY: n += 1
 	return n
 
-## May a subtile enter tile (x, y): terrain must hold a pool, and the landing either fits the budget or the displaced liquid has escape-reachable headroom up the column (air-gate family, world §3). Caller guarantees in-bounds.
+## May a subtile enter tile (x, y): ground must hold a pool (capacity above zero), and the landing either fits the budget or the displaced liquid has escape-reachable headroom up the column (air-gate family, world §3). Caller guarantees in-bounds.
 func _enterable(x: int, y: int) -> bool:
-	if TilePacket.FULL_SOLID[pk.get_terrain(idx(x, y))]:
+	if pk.solid_capacity(idx(x, y)) == 0:
 		return false
 	var free := TilePacket.POOL_MAX - TilePacket.SUB_DISPLACE * (_cells_in_tile(x, y) + 1) - pk.pool_total(idx(x, y))
 	if free >= 0:
@@ -222,9 +224,15 @@ func _can_slide(kind: int, i: int) -> bool:
 		return SLIDE_WET[kind]
 	return SLIDE[kind]
 
-## Is this subtile wetted? Its own tile holds pool content. A full solid tile holds no pool; neighbor reads are the float lab's extension, not soil's.
-func _in_liquid(sx: int, sy: int) -> bool:
-	return pk.pool_total(idx(sx >> 1, sy >> 1)) > 0
+## The medium rule (world §3): rest (0) in any pool material denser than the solid -- buoyancy reads the density chart; otherwise sink at SUB_SINK through liquid, fall at FALL through gas and air. Solids never enter occupied solids -- the expanded grid's occupancy check, unchanged.
+func _medium_rate(i: int, kind: int) -> int:
+	for m in TilePacket.MAT_COUNT:
+		if pk.get_pool(i, m) > 0 and TilePacket.DENSITY[m] > TilePacket.SUB_DENSITY[kind]:
+			return 0   # something denser holds the solid up
+	for m in TilePacket.MAT_COUNT:
+		if pk.get_pool(i, m) > 0 and m != TilePacket.Mat.SMOKE and m != TilePacket.Mat.STEAM:
+			return TilePacket.SUB_SINK[kind]
+	return FALL[kind]
 
 ## Register a subtile arrival at tile i (one mass quantum, dir code); magnitudes sum, direction follows the largest single arrival (first stamp wins ties -- fixed sweep order, so deterministic).
 func flow_stamp(i: int, dir: int, mag: int) -> void:
@@ -281,7 +289,7 @@ func _soil_in_tile(x: int, y: int) -> int:
 func _swap_ok(sx: int, sy: int, tx: int, ty: int, kind: int) -> bool:
 	var src := idx(sx >> 1, sy >> 1)
 	var dst := idx(tx >> 1, ty >> 1)
-	if TilePacket.FULL_SOLID[pk.get_terrain(dst)]:
+	if pk.solid_capacity(dst) == 0:
 		return false
 	var shed := pk.pool_total(dst) - maxi(0, TilePacket.POOL_MAX - TilePacket.SUB_DISPLACE * (_cells_in_tile(tx >> 1, ty >> 1) + 1))
 	var room := maxi(0, TilePacket.POOL_MAX - TilePacket.SUB_DISPLACE * (_cells_in_tile(sx >> 1, sy >> 1) - 1)) - pk.pool_total(src)

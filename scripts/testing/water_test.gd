@@ -53,8 +53,11 @@ const PRESETS := {
 	],
 }
 
+var sand: GridSand   # the carve binds it: authored walls fuse (world §3)
+
 ## Load the U-tube demo on boot.
 func _setup() -> void:
+	sand = room.sand
 	_load_preset(KEY_F1)
 
 ## Tick-boundary dosing: held-mouse water in PAINT_DOSE units.
@@ -72,7 +75,7 @@ func _paint_stroke(t: Vector2i) -> bool:
 		return true
 	if Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT) and paint == Paint.STONE:
 		water.set_water(t.x, t.y, 0)
-		return stone.set_terrain(t.x, t.y, GridStone.Terrain.STONE)
+		return _lay_matter(t, TilePacket.K_STONE)
 	return false
 
 ## Scene keys: F1-F7 presets, 1/2 material, K runs the water and packet suites.
@@ -99,7 +102,7 @@ func _hint_header() -> String:
 func _load_preset(keycode: int) -> void:
 	stone.clear()
 	water.clear()
-	_carve_preset(stone, water, PRESETS[keycode])
+	_carve_preset(stone, water, PRESETS[keycode], sand.structures)
 	paused = false
 	renderer.redraw()
 
@@ -269,7 +272,8 @@ func run_packet_tests() -> void:
 func _test(name: String, preset_key: int, check: Callable) -> void:
 	var t_stone := GridStone.new(GRID_W, GRID_H)
 	var t_water := GridWater.new(GRID_W, GRID_H, t_stone)
-	var o := _carve_preset(t_stone, t_water, PRESETS[preset_key])
+	var t_sand := GridSand.new(GRID_W, GRID_H, t_stone, t_water)
+	var o := _carve_preset(t_stone, t_water, PRESETS[preset_key], t_sand.structures)
 	var t0 := t_water.total()
 	for t in TEST_TICKS:
 		t_water.tick()

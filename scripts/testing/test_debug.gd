@@ -19,7 +19,7 @@ func run_tests() -> void:
 ## DT0: painted furniture, fifty ticks, restore -- the DEBUG_S column returns byte-exact with the census (RT1's proof, furniture edition).
 func _dt0_roundtrip() -> String:
 	var r := Room.new(GRID_W, GRID_H, 21)
-	var o := _carve_preset(r.stone, r.water, ["....", "...."])
+	var o := _carve_preset(r.stone, r.water, ["....", "...."], r.sand.structures)
 	var pk := r.stone.packet
 	pk.set_debug(pk.idx(o.x + 1, o.y), TilePacket.DebugTile.WATER_SOURCE)
 	pk.set_debug(pk.idx(o.x + 2, o.y + 1), TilePacket.DebugTile.DRAIN)
@@ -40,7 +40,7 @@ func _dt0_roundtrip() -> String:
 ## DT1: a one-wide shaft under the source: fall fills it brim-full ungated (pour and creep find only walls, a one-tile run has no pair to trade), the source tile tops off at exactly 255, and from then on every dose is refused -- totals pin at 510, no debt, no overflow.
 func _dt1_source() -> String:
 	var r := Room.new(GRID_W, GRID_H, 22)
-	var o := _carve_preset(r.stone, r.water, ["s", ".", "."])
+	var o := _carve_preset(r.stone, r.water, ["s", ".", "."], r.sand.structures)
 	var pk := r.stone.packet
 	pk.set_debug(pk.idx(o.x, o.y + 1), TilePacket.DebugTile.WATER_SOURCE)
 	for _t in 1000:
@@ -61,7 +61,7 @@ func _dt1_source() -> String:
 ## DT2: a bowl with a drain in its floor: everything the flow rules can move walks into the drain and is taken; sub-visible films may cling to the floor tiles (one line is the tolerance).
 func _dt2_drain() -> String:
 	var r := Room.new(GRID_W, GRID_H, 23)
-	var o := _carve_preset(r.stone, r.water, ["....", "wwww", "wwww"])
+	var o := _carve_preset(r.stone, r.water, ["....", "wwww", "wwww"], r.sand.structures)
 	var pk := r.stone.packet
 	if pk.mat_total(TilePacket.Mat.WATER) <= 0:
 		return "carve laid no water -- vacuous"
@@ -78,7 +78,7 @@ func _dt2_drain() -> String:
 ## DT3: a sealed pocket of smoke and steam with an open-air tile in the cavity: the gases walk into it and are taken (steam may rain onto the stone first -- condensation is another sanctioned exit); sub-visible films excepted.
 func _dt3_open_air() -> String:
 	var r := Room.new(GRID_W, GRID_H, 24)
-	var o := _carve_preset(r.stone, r.water, ["sssss", "vmm..", "sssss"])
+	var o := _carve_preset(r.stone, r.water, ["sssss", "vmm..", "sssss"], r.sand.structures)
 	var pk := r.stone.packet
 	if pk.mat_total(TilePacket.Mat.SMOKE) + pk.mat_total(TilePacket.Mat.STEAM) <= 0:
 		return "carve laid no gas -- vacuous"
@@ -97,8 +97,8 @@ func _dt4_cup() -> String:
 	var rows: Array = ["wsssww", "ws.sww", "ws.sww", "wwwwww", "wwwwww"]
 	var control := Room.new(GRID_W, GRID_H, 25)
 	var vented := Room.new(GRID_W, GRID_H, 26)
-	var oc := _carve_preset(control.stone, control.water, rows)
-	var ov := _carve_preset(vented.stone, vented.water, rows)
+	var oc := _carve_preset(control.stone, control.water, rows, control.sand.structures)
+	var ov := _carve_preset(vented.stone, vented.water, rows, vented.sand.structures)
 	vented.stone.packet.set_debug(vented.stone.idx(ov.x + 2, ov.y + 1), TilePacket.DebugTile.OPEN_AIR)
 	for _t in 800:
 		control.tick()
@@ -126,12 +126,14 @@ func _dt4_cup() -> String:
 func _dt5_rain_not_donor() -> String:
 	var r := Room.new(GRID_W, GRID_H, 31)
 	var pk := r.stone.packet
-	# the basin: a 3-wide stone U, three deep, open sky above; the source high over the center column
+	# the basin: a 3-wide fused stone U, three deep, open sky above; the source high over the center column
 	for x in range(6, 9):
-		r.stone.set_terrain(x, 12, GridStone.Terrain.STONE)
+		r.stone.packet.set_sub(r.stone.idx(x, 12), TilePacket.K_STONE, 15)
+		r.sand.structures.fuse(x, 12)
 	for yy in range(9, 13):
-		r.stone.set_terrain(5, yy, GridStone.Terrain.STONE)
-		r.stone.set_terrain(9, yy, GridStone.Terrain.STONE)
+		for x in [5, 9]:
+			r.stone.packet.set_sub(r.stone.idx(x, yy), TilePacket.K_STONE, 15)
+			r.sand.structures.fuse(x, yy)
 	pk.set_debug(pk.idx(7, 2), TilePacket.DebugTile.WATER_SOURCE)
 	for _t in 40:
 		r.tick()

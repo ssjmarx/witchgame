@@ -149,11 +149,11 @@ func _apply_tool(t: Vector2i) -> bool:
 	var i := stone.idx(t.x, t.y)
 	match tool:
 		Tool.STONE:
-			if _lay_solid(t, GridStone.Terrain.STONE):
+			if _lay_matter(t, TilePacket.K_STONE):
 				mirrors[observed].sync()
 				return true
 		Tool.WOOD:
-			if _lay_solid(t, GridStone.Terrain.WOOD):
+			if _lay_matter(t, TilePacket.K_WOOD):
 				mirrors[observed].sync()
 				return true
 		Tool.SOIL:
@@ -201,7 +201,7 @@ func _brush_guarded(pk: TilePacket, i: int, kind: int) -> bool:
 	mirrors[observed].sync()
 	return true
 
-## Furniture goes onto cleared ground only (AIR, empty pool) -- the _lay_solid rule mirrored; it keeps a pool so matter can reach it.
+## Furniture goes onto cleared ground only (no matter, empty pool) -- the _lay_matter rule mirrored; it keeps a pool so matter can reach it.
 func _lay_furniture(pk: TilePacket, i: int, d: int) -> bool:
 	if pk.get_terrain(i) != TilePacket.T.AIR or pk.pool_total(i) > 0:
 		return false
@@ -234,20 +234,20 @@ func _load_slots() -> void:
 		if s != null:
 			rooms[k].restore(s)
 		else:
-			_carve_preset(rooms[k].stone, rooms[k].water, rows)
+			_carve_preset(rooms[k].stone, rooms[k].water, rows, rooms[k].sand.structures)
 
-## Snapshot the observed room into slot k's file as an opaque census blob (the level format keeps its own lab); a crossed save also restores it into room k, live.
+## Snapshot the observed room into slot k's file as an opaque census blob (the level format keeps its own lab); a crossed save also restores it into room k, live. Version 3: the retirement cut's fifteen columns.
 func _save_slot(k: int) -> void:
 	var s := rooms[observed].snapshot()
 	var f := FileAccess.open(SLOT_PATH % k, FileAccess.WRITE)
 	if f == null:
 		return
-	f.store_var({"cols": s.cols, "ign": s.ignition, "wt": s.water_ticks, "st": s.sand_ticks})
+	f.store_var({"v": 3, "cols": s.cols, "ign": s.ignition, "wb": s.woodburn, "wt": s.water_ticks, "st": s.sand_ticks})
 	f.close()
 	if k != observed:
 		rooms[k].restore(s)
 
-## Read slot k's census from disk as a RoomState; null when no file exists and the carve path takes over.
+## Read slot k's census from disk as a RoomState; null when no file exists and the carve path takes over. Pre-version blobs migrate: authored terrain converts to pre-fused matter and the fuel column drops (world §3).
 func _read_slot(k: int) -> RoomState:
 	var f := FileAccess.open(SLOT_PATH % k, FileAccess.READ)
 	if f == null:
@@ -256,12 +256,14 @@ func _read_slot(k: int) -> RoomState:
 	var s := RoomState.new()
 	for col in d["cols"]:
 		s.cols.append(col)
-	# pre-structure slots carry fifteen columns: membership arrives as a zero column, the byte-exact empty world
-	while s.cols.size() < TilePacket.COL_COUNT:
-		var fill := PackedByteArray()
-		fill.resize(rooms[k].width * rooms[k].height)
-		s.cols.append(fill)
+	if int(d.get("v", 0)) < 3:
+		var migrated: Array = rooms[k].stone.packet.migrate_legacy_cols(s.cols, rooms[k].width, rooms[k].height)
+		s.cols.clear()
+		for col in migrated:
+			s.cols.append(col)
 	s.ignition = d["ign"]
+	if d.has("wb"):
+		s.woodburn = d["wb"]
 	s.water_ticks = d["wt"]
 	s.sand_ticks = d["st"]
 	return s
@@ -370,7 +372,7 @@ func _update_inspector(t: Vector2i) -> void:
 	var pk := stone.packet
 	var i := stone.idx(t.x, t.y)
 	var txt := "TILE %d,%d  %s" % [t.x, t.y, GridStone.Terrain.keys()[pk.get_terrain(i)].to_lower()]
-	txt += "\nsub s%d d%d w%d  struct %d  damp %d/%d  fuel %d  fire %d" % [pk.get_sub(i, TilePacket.K_STONE), pk.get_sub(i, TilePacket.K_SOIL), pk.get_sub(i, TilePacket.K_WOOD), pk.struct_s[i], pk.get_damp(i), pk.damp_capacity(i), pk.get_fuel(i), pk.get_fire(i)]
+	txt += "\nsub s%d d%d w%d  struct %d  damp %d/%d  burn %d  fire %d" % [pk.get_sub(i, TilePacket.K_STONE), pk.get_sub(i, TilePacket.K_SOIL), pk.get_sub(i, TilePacket.K_WOOD), pk.struct_s[i], pk.get_damp(i), pk.damp_capacity(i), rooms[observed].react.get_woodburn(t.x, t.y), pk.get_fire(i)]
 	txt += "\npool w%d o%d a%d l%d m%d v%d  free %d" % [pk.get_pool(i, TilePacket.Mat.WATER), pk.get_pool(i, TilePacket.Mat.OIL), pk.get_pool(i, TilePacket.Mat.ACID), pk.get_pool(i, TilePacket.Mat.LAVA), pk.get_pool(i, TilePacket.Mat.SMOKE), pk.get_pool(i, TilePacket.Mat.STEAM), pk.pool_free(i)]
 	txt += "\nflow %d %s  %s  furn %s" % [water.get_flow_mag(t.x, t.y), GridWater.FlowDir.keys()[water.get_flow_dir(t.x, t.y)].to_lower(), "sealed" if water.is_air_sealed(t.x, t.y) else "vented", TilePacket.DebugTile.keys()[pk.get_debug(i)].to_lower()]
 	inspect_label.text = txt

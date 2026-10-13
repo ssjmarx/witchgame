@@ -97,7 +97,7 @@ func _paint_stroke(t: Vector2i) -> bool:
 	if Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT) and paint == Paint.STONE:
 		stone.packet.set_sub(i, TilePacket.K_SOIL, 0)
 		water.set_water(t.x, t.y, 0)
-		return stone.set_terrain(t.x, t.y, GridStone.Terrain.STONE)
+		return _lay_matter(t, TilePacket.K_STONE)
 	return false
 
 ## Scene keys: F1-F7 presets, 1/2/3 material, K runs the soil suite.
@@ -137,7 +137,7 @@ func _load_preset(keycode: int) -> void:
 	sand.clear()
 	water.clear()
 	stone.clear()
-	_carve_preset(stone, water, PRESETS[keycode])
+	_carve_preset(stone, water, PRESETS[keycode], sand.structures)
 	paused = false
 	renderer.redraw()
 

@@ -82,14 +82,14 @@ func _paint_stroke(t: Vector2i) -> bool:
 		return true
 	match paint:
 		Paint.STONE:
-			if _lay_solid(t, GridStone.Terrain.STONE):
+			if _lay_matter(t, TilePacket.K_STONE):
 				mirror.sync()
 				return true
 		Paint.WATER:
 			water.set_water(t.x, t.y, 255)
 			return true
 		Paint.WOOD:
-			if _lay_solid(t, GridStone.Terrain.WOOD):
+			if _lay_matter(t, TilePacket.K_WOOD):
 				mirror.sync()
 				return true
 		Paint.SOIL:
@@ -117,7 +117,7 @@ func _spawn_witch(t: Vector2i) -> void:
 func _load_preset(_keycode: int) -> void:
 	room.reset()
 	var rows: Array = ["............", "............", "............", "............", ".........www", "WWWoottt.www"]
-	var o := _carve_preset(room.stone, room.water, rows)
+	var o := _carve_preset(room.stone, room.water, rows, room.sand.structures)
 	var pk := room.stone.packet
 	for x in range(o.x + 5, o.x + 8):
 		pk.add_damp(pk.idx(x, o.y + 5), 64)
@@ -149,6 +149,7 @@ func _info_line(t: Vector2i) -> String:
 	if t.x >= 0:
 		var i := room.stone.idx(t.x, t.y)
 		info += "   tile %d,%d   water %3d" % [t.x, t.y, pk.get_pool(i, TilePacket.Mat.WATER)]
-		if pk.get_fuel(i) > 0 or pk.get_fire(i) != 0:
-			info += "   fuel %3d   fire %d   ign %d" % [pk.get_fuel(i), pk.get_fire(i), room.react.get_ignition(t.x, t.y)]
+		var burn := room.react.get_woodburn(t.x, t.y)
+		if burn > 0 or pk.get_fire(i) != 0:
+			info += "   burn %3d   fire %d   ign %d" % [burn, pk.get_fire(i), room.react.get_ignition(t.x, t.y)]
 	return info

@@ -55,7 +55,7 @@ func _bt_dunk_drink() -> String:
 ## BT13: a body pacing a full basin -- the wake pours into the vacated column, so the family never moves and the basin only ever loses the entry splash.
 func _bt_walk() -> String:
 	var r := Room.new(GRID_W, GRID_H, 42)
-	var o := _carve_preset(r.stone, r.water, ["swwws", "swwws"])
+	var o := _carve_preset(r.stone, r.water, ["swwws", "swwws"], r.sand.structures)
 	var b := ThermalBody.new()
 	b.wetness = 64
 	b.drip_mul = 0
@@ -87,7 +87,7 @@ func _bt_walk() -> String:
 ## BT12: a volume-3 body in a full row reads 63 and stays there -- seek-level cannot refill past the claim; the neighbors hold 255.
 func _bt_standing_claim() -> String:
 	var r := Room.new(GRID_W, GRID_H, 41)
-	var o := _carve_preset(r.stone, r.water, ["www"])
+	var o := _carve_preset(r.stone, r.water, ["www"], r.sand.structures)
 	var b := ThermalBody.new()
 	b.wetness = 64
 	b.drip_mul = 0
@@ -109,7 +109,7 @@ func _bt_standing_claim() -> String:
 ## BT11: entry splashes once (her volume's worth over the brim); tenancy pumps nothing -- the basin keeps its water, where continuous ejection drained it toward half.
 func _bt_no_drain() -> String:
 	var r := Room.new(GRID_W, GRID_H, 40)
-	var o := _carve_preset(r.stone, r.water, ["swwws", "swwws"])
+	var o := _carve_preset(r.stone, r.water, ["swwws", "swwws"], r.sand.structures)
 	var t := Vector2i(o.x + 2, o.y + 1)
 	var b := ThermalBody.new()
 	b.wetness = 254
@@ -277,7 +277,7 @@ func _bt_fire_loop() -> String:
 ## BT6: DRY underfoot -- 64 damp in the supported soil steams off as 64 steam, heat 64 -> 0, and the wet tag releases.
 func _bt_dry() -> String:
 	var r := Room.new(GRID_W, GRID_H, 36)
-	var o := _carve_preset(r.stone, r.water, ["dd", "dd"])
+	var o := _carve_preset(r.stone, r.water, ["dd", "dd"], r.sand.structures)
 	var b := ThermalBody.new()
 	b.heat = 64
 	b.drip_mul = 0

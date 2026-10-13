@@ -276,7 +276,7 @@ func _eject_up(src: int, x: int, y: int, left: int) -> int:
 	while left > 0 and y > 0:
 		y -= 1
 		var h := stone.idx(x, y)
-		if TilePacket.FULL_SOLID[pk.get_terrain(h)]:
+		if pk.solid_capacity(h) == 0:
 			break
 		if pk.pool_free(h) > 0:
 			left = _pour_into(src, h, left)

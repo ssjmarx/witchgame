@@ -23,7 +23,7 @@ func _init(p_w: int, p_h: int, p_seed: int) -> void:
 	stone = GridStone.new(p_w, p_h)
 	water = GridWater.new(p_w, p_h, stone)
 	sand = GridSand.new(p_w, p_h, stone, water)
-	react = GridReactions.new(p_w, p_h, stone)
+	react = GridReactions.new(p_w, p_h, stone, sand.structures)
 	debug = GridDebug.new(p_w, p_h, stone, water)
 	bridge = ActorBridge.new(p_w, p_h, stone, rng, water.flow)
 
@@ -35,13 +35,15 @@ func tick() -> void:
 	water.tick()
 	react.tick()
 
-## Copy the persistent census: sixteen packet columns, the ignition overlay, both sweep-parity counters.
+## Copy the persistent census: fifteen packet columns, the ignition overlay, the burn pool, both sweep-parity counters.
 func snapshot() -> RoomState:
 	var s := RoomState.new()
 	var pk := stone.packet
 	for i in TilePacket.COL_COUNT:
 		s.cols.append(pk.column(i).duplicate())
 	s.ignition = react.snapshot_ignition()
+	s.woodburn = react.snapshot_woodburn()
+	s.starved = react.snapshot_starved()
 	s.water_ticks = water.tick_count
 	s.sand_ticks = sand.tick_count
 	return s
@@ -56,18 +58,19 @@ func restore(s: RoomState) -> void:
 	pk.rebuild_books()
 	pk.rebuild_present()
 	react.restore_ignition(s.ignition)
+	react.restore_woodburn(s.woodburn)
+	react.restore_starved(s.starved)
 	water.tick_count = s.water_ticks
 	sand.tick_count = s.sand_ticks
 	pk.assert_all()
 
-## Reset to a blank world through every owning clear path, terrain first (a cleared WOOD tile reads no damp cap); ends on the assert.
+## Reset to a blank world through every owning clear path, terrain first; ends on the assert.
 func reset() -> void:
 	stone.clear()
 	water.clear()
 	sand.clear()
 	var pk := stone.packet
 	pk.clear_damp()
-	pk.clear_fuel()
 	pk.clear_fire()
 	pk.clear_debug()
 	react.clear()

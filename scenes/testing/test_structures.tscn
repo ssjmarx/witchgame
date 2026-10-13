@@ -1,17 +1,17 @@
-[gd_scene format=3]
+[gd_scene format=3 uid="uid://jcbhkrcw1208"]
 
-[ext_resource type="Script" path="res://scripts/testing/test_structures.gd" id="1_struct"]
+[ext_resource type="Script" uid="uid://c0swi6q2f27b" path="res://scripts/testing/test_structures.gd" id="1_struct"]
 
-[node name="TestStructures" type="Node2D"]
+[node name="TestStructures" type="Node2D" unique_id=1621350004]
 script = ExtResource("1_struct")
 
-[node name="TickTimer" type="Timer" parent="."]
+[node name="TickTimer" type="Timer" parent="." unique_id=345128370]
 wait_time = 0.1
 autostart = true
 
-[node name="UI" type="CanvasLayer" parent="."]
+[node name="UI" type="CanvasLayer" parent="." unique_id=1298656547]
 
-[node name="Hint" type="Label" parent="UI"]
+[node name="Hint" type="Label" parent="UI" unique_id=1589846219]
 offset_left = 3.0
 offset_top = 2.0
 offset_right = 400.0

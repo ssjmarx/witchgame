@@ -97,7 +97,7 @@ func _paint_stroke(t: Vector2i) -> bool:
 		stone.packet.set_sub(i, TilePacket.K_SOIL, 0)
 		water.set_water(t.x, t.y, 0)
 		stone.packet.set_pool(i, TilePacket.Mat.OIL, 0)
-		return stone.set_terrain(t.x, t.y, GridStone.Terrain.STONE)
+		return _lay_matter(t, TilePacket.K_STONE)
 	return false
 
 ## Scene keys: F1-F4 presets, 1/2/3 material, K runs the oil suite.
@@ -140,7 +140,7 @@ func _load_preset(keycode: int) -> void:
 	water.clear()
 	stone.clear()
 	stone.packet.clear_damp()
-	_carve_preset(stone, water, PRESETS[keycode])
+	_carve_preset(stone, water, PRESETS[keycode], sand.structures)
 	paused = false
 	renderer.redraw()
 
