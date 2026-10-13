@@ -10,23 +10,7 @@ world that looks like a 1994 programmer just barely got it to work. Powers of tw
 wherever a number is chosen. The tile grid is privileged (THE gameboy-authentic
 shape). Structures and buoyancy are big gameplay-positives and stay.*
 
-## 1. The occlusion pass
-
-- **Directional bitmask blocking on the tile pool** — the tile grid stays privileged;
-  solids thinner than a tile still hold liquid. One shared ruling:
-  - blocks **vertical** flow iff the tile's solid pattern has ≥1 left subtile AND ≥1
-    right subtile (BL|TL and BR|TR);
-  - blocks **horizontal** iff ≥1 top AND ≥1 bottom;
-  - blocks **diagonal** iff the opposed diagonal pair on the crossing corner is
-    filled (TL+BR or BL+TR — the same corner law the sand pass obeys).
-- The 16-entry solid-pattern table is written **once** and shared by sim (the
-  occlusion check at every `is_solid` call site: water FALL/POUR/CREEP/SEEK, gas
-  rise/spread, the escape walk, sand entry gates, the bridge pours) and render
-  (§2's compositing table).
-- A one-subtile-thick floor is a funnel through its open half; a two-subtile or
-  zigzag floor holds — the diagonal rule makes the zigzag work.
-
-## 2. The tileset lab
+## 1. The tileset lab
 
 **Goal: every single visible game asset is a PNG colored by the palette bank — no
 exceptions.** The renderer moves to an 8×8 tile atlas; all currently rendered matter
@@ -45,7 +29,7 @@ bank in this lab too.
   — rejected.
 - **Rain:** four flow-level variants, drawn TL→BL then TR→BR with a random offset —
   instant gameboy rain. The **waterfall read** at high flow = rain tiles drawn over
-  filled water — and that image is the telegraph for FLOW_BLOCK (§3): when the
+  filled water — and that image is the telegraph for FLOW_BLOCK (§2): when the
   player sees it, they know the flow is above the you-cannot-move-through limit.
 - **Gas:** keep the dithering → solid progression past 50% capacity; overlay the two
   most present gases in density order (steam over smoke — the only pair; miasma was
@@ -53,7 +37,7 @@ bank in this lab too.
 - **Matter + liquid compositing:** the hand-listable 16-entry solid/liquid
   combination table — e.g. solids in BL+TR: water from the left or top fills TL
   (blocked from flowing right/down); from the right or bottom it fills BR. The same
-  table as §1's occlusion.
+  tables as the shipped occlusion (world §3).
 - **AmbGen becomes an offline asset compiler:** the generator bakes
   stalactites/stalagmites of assorted sizes onto a tilemap sheet; the runtime places
   tiles from the sheet instead of generating caves bespoke. Drips become **one**
@@ -62,7 +46,7 @@ bank in this lab too.
   16-bit edge-mask tiling (the era's blob/edge-mask trick); bank-tinted tile lookups
   replace per-pixel edge draws.
 
-## 3. The buoyancy lab
+## 2. The buoyancy lab
 
 - **Structure falling ships** — the compromise rule: an unsupported piece falls as a
   unit, **one tile at a time** (a stone object on a wooden pillar: burn the pillar
@@ -75,7 +59,7 @@ bank in this lab too.
   - `FLOW_PUSH`: heavy water dumping on her feet pushes her a bit for game feel —
     a nudge below the threshold, never fully blocking.
   - `FLOW_BLOCK`: at the waterfall threshold the tile **rejects** her — she must
-    block or redirect the flow to pass. The waterfall render (§2) is its telegraph.
+    block or redirect the flow to pass. The waterfall render (§1) is its telegraph.
   - **The lasso-barge:** the witch pulls herself through water on a floating barge
     with her lasso. She builds the ship (structures + density float), shapes the
     pool and surroundings (dams, drains, the CA itself), stands on it, and pulls

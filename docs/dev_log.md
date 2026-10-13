@@ -7,6 +7,57 @@ everything historical lives here. Newest entries first.*
 
 ---
 
+## The occlusion pass (2026-10, roadmap §1 shipped)
+
+Directional solidity on the tile pool — the roadmap's first post-audit lab. Ten suites
+green, the prior nine untouched.
+
+**The law, as it settled after two mid-implementation amendments:**
+
+- **Crossings versus presence.** `is_solid` stays (presence: fixtures, the boundary,
+  4/4 matter — the surface walks, soak stop, burial, sand gates, bridge support read
+  it). New crossing tests on `GridStone`, indexed by the tile's 4-bit solid pattern
+  (OR of the three matter nibbles) against one 16-entry table pair (`BLOCKS_V`/
+  `BLOCKS_H` beside POPCOUNT).
+- **The edge test** (the user's amendment, caught in planning): the shared edge seals
+  when the two near sides united span it — the source's bottom row ∪ the target's top
+  row for vertical (a stacked BL over TR seals), the joined columns for horizontal.
+  The first draft read only the target's whole pattern; that misses every cross-tile
+  seal.
+- **The interior test** (implied by the amendment): the source's own pattern must
+  leave an open path — an open column to exit vertically, an open row horizontally.
+  This is what makes diagonal-pair (TL+BR) floors hold: water enters the open top,
+  finds no through-column, and stays. Same tables, second read.
+- **The corner law for diagonals, corrected live:** the plan's "opposed pair pinches"
+  formulation leaked — OC2's zigzag drained through pours that rounded a neighbor's
+  solid corner while the opposite cell stood open. The per-cell law the sand pass
+  obeys is three SINGLES: the source's own exit corner, the side tile's corner, the
+  target's entry corner — any one solid cell seals. (OC5's pinch works under either
+  reading; OC2 only under the singles.)
+- Consumers: FALL/rise = interior + edge; CREEP/spread = interior + edge; POUR = the
+  corner law (also loosened correctly: water now pours under a top-row overhang);
+  the seek rise, the escape flood's edges, and the gas exchange gate the same way;
+  the hop reads the corner law instead of both-capacity-0.
+
+**The debugging arc:** OC5's "leak" was a world typo (`'r'` where `'s'` was meant —
+unfused cells scattered and opened the corner; the probe showed the stone moving,
+which no gate can explain). OC4's first failure was an off-by-one glyph (the dam at
+x1, the reduction at x2 — reducing air). OC4's top dam tile saturates only to the
+seek-equalized level (creep stops at LINE; deep rows fill to 127 via pour) — the
+check now asserts deep rows exactly, the top row merely wet. BK9 needed NO change:
+the chipped wall admits water through its opened face exactly as it always claimed.
+
+**The pinched-interior amendment** (the user's corner-leak report, same lab): a TL+BR tile's open cells are corner-pinched and never connect, but the pour read the source's exit corner as merely open — water that entered at the open top teleported across the pinch and out the far corner. Fix: `_corner_reachable` — the exit corner must share a fully open row or column with a partner (the interior test's per-corner form). A diagonal pair now pours nothing; funnels, overhang pours, and dam saturation all re-verified by derivation and by OC7 (the report's exact scene: water top and right, the pocket behind the pinch stays dry, the tile saturates to 127 and holds). The gas hop inherits the fix through `blocks_diag`.
+
+**Suite:** `test_occlusion.gd`, tenth registered — OC0 funnel, OC1 top-row hold, OC2
+the zigzag, OC3 the stacked diagonal, OC4 the saturating dam, OC5 the pinch, OC6 the
+cleared column. No class_name (path-loaded, the structures pattern) — no rescan.
+
+**Docs:** world §3 gains the occlusion ruling; E2 and the suite inventory say ten;
+current_plan §1 deleted (tileset → §1, buoyancy → §2); this entry.
+
+---
+
 ## The cleanup cut (2026-10, roadmap §1 shipped)
 
 The plausibility audit's first deliverable: TAGS dies, the ladder goes pow2, the census

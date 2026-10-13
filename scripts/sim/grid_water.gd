@@ -230,7 +230,7 @@ func _cell_pass(i: int, m: int) -> void:
 	if p.y + 1 < height:
 		var b := i + width
 		var free := pk.pool_free(b)
-		if not stone.is_solid(p.x, p.y + 1) and free > 0:
+		if stone.drains_v(p.x, p.y) and stone.edge_v_open(p.x, p.y + 1) and free > 0:
 			var move := mini(mini(w, free), visc)
 			var taken := pk.take_pool(i, m, move)  # take-give: conservation
 			pk.add_pool(b, m, taken)               #   by construction
@@ -244,8 +244,8 @@ func _cell_pass(i: int, m: int) -> void:
 			var tx := p.x + dx
 			if tx < 0 or tx >= width:
 				continue
-			if stone.is_solid(tx, p.y) or stone.is_solid(tx, p.y + 1):
-				continue  # no leaking through corners
+			if stone.blocks_diag(p.x, p.y, dx, 1):
+				continue  # the corner is pinched -- no pouring through a sealed diagonal (world §3)
 			var t := idx(tx, p.y + 1)
 			var free := pk.pool_free(t)
 			if pk.pool_total(t) < LINE and free > 0 and _gate(t, i, m):
@@ -256,12 +256,14 @@ func _cell_pass(i: int, m: int) -> void:
 				return
 
 	# 3) CREEP -- advance into dry space, both sides, half-difference capped by the target's free capacity and viscosity
+	if not stone.drains_h(p.x, p.y):
+		return   # spanning matter seals the interior path -- the liquid cannot reach a side face
 	for k in 2:
 		var dx := flip if k == 0 else -flip
 		var nx := p.x + dx
 		if nx < 0 or nx >= width:
 			continue
-		if stone.is_solid(nx, p.y):
+		if not stone.edge_h_open(maxi(p.x, nx), p.y):
 			continue
 		var n := idx(nx, p.y)
 		var nw := pk.get_pool(n, m)

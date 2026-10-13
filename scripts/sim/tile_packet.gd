@@ -53,6 +53,14 @@ const FULL_SOLID: Array[bool] = [false, true, true, true, true]
 ## POPCOUNT[nibble] -- bits set, for subtile mass and capacity math.
 const POPCOUNT: Array[int] = [0, 1, 1, 2, 1, 2, 2, 3, 1, 2, 2, 3, 2, 3, 3, 4]
 
+## BLOCKS_V[p]/BLOCKS_H[p] -- does a 4-bit solid pattern seal a crossing? Vertical: some left
+## cell (TL|BL) AND some right cell (TR|BR); horizontal: some top (TL|TR) AND some bottom
+## (BL|BR). The occlusion pass's one table, read twice per crossing (world §3): on the source's
+## own pattern (the interior test -- liquid inside must reach the face it exits through) and on
+## the union of the two near sides (the edge test -- cross-tile patterns seal the shared edge).
+const BLOCKS_V: Array[bool] = [false, false, false, true, false, false, true, true, false, true, false, true, true, true, true, true]
+const BLOCKS_H: Array[bool] = [false, false, false, false, false, true, true, true, false, true, true, true, false, true, true, true]
+
 const POOL_MAX := 255      # world §13 -- the tile budget
 const SUB_DISPLACE := 64   # world §13 -- each solid subtile displaces 64
 const NIBBLE_MAX := 15     # 4-bit occupancy
@@ -384,6 +392,10 @@ func assert_all() -> bool:
 func clear_damp() -> void:
 	_book(Led.DAMP, -damp_total())
 	damp.fill(0)
+
+## The tile's 4-bit solid pattern -- the OR of the three matter nibbles; the occlusion tables' index (world §3).
+func occlusion_bits(i: int) -> int:
+	return stone_s[i] | soil_s[i] | wood_s[i]
 
 ## Material id of the single lowest-density content at tile i; -1 when the pool is empty.
 func lightest_mat(i: int) -> int:

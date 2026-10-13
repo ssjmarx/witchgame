@@ -116,7 +116,7 @@ func transfer_level(s: int, t: int, y: int, diff: int, ptops: PackedInt32Array, 
 		var e_p := pk.xy_of(entry)
 		if e_p.y > 0:
 			var above := pk.idx(t, e_p.y - 1)
-			if not stone.is_solid(t, e_p.y - 1) and pk.pool_total(above) <= GridWater.AIR_PASSABLE_MAX \
+			if stone.drains_v(t, e_p.y) and stone.edge_v_open(t, e_p.y) and pk.pool_total(above) <= GridWater.AIR_PASSABLE_MAX \
 					and _pocket_vented_for(above, s, s_top):
 				var r2 := pk.pool_free(above)
 				if r2 > 0:

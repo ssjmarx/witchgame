@@ -156,16 +156,16 @@ func _compute_escape() -> void:
 				if _escape[i] or stone.is_solid(x, y):
 					continue
 				var ok := y == 0 or (pk.get_debug(i) == TilePacket.DebugTile.OPEN_AIR and pk.pool_total(i) <= GridWater.AIR_PASSABLE_MAX)  # open sky, or a breathing open-air tile (a drowned vent stops venting)+
-				if not ok and _escape[i - width]:
+				if not ok and _escape[i - width] and stone.edge_v_open(x, y):
 					ok = true  # rise through air, or bubble up through liquid
 				if not ok and y > 0 and stone.is_solid(x, y - 1):
-					if (x > 0 and _escape[i - 1]) or (x < width - 1 and _escape[i + 1]):
+					if (x > 0 and _escape[i - 1] and stone.edge_h_open(x, y)) or (x < width - 1 and _escape[i + 1] and stone.edge_h_open(x + 1, y)):
 						ok = true  # pinned under a ceiling: slide sideways
 				if not ok and pk.pool_total(i) <= GridWater.AIR_PASSABLE_MAX \
-						and ((x > 0 and _escape[i - 1] and pk.pool_total(i - 1) <= GridWater.AIR_PASSABLE_MAX)
-						or (x < width - 1 and _escape[i + 1] and pk.pool_total(i + 1) <= GridWater.AIR_PASSABLE_MAX)
-						or (y > 0 and _escape[i - width] and pk.pool_total(i - width) <= GridWater.AIR_PASSABLE_MAX)
-						or (y < height - 1 and _escape[i + width] and pk.pool_total(i + width) <= GridWater.AIR_PASSABLE_MAX)):
+						and ((x > 0 and _escape[i - 1] and stone.edge_h_open(x, y) and pk.pool_total(i - 1) <= GridWater.AIR_PASSABLE_MAX)
+						or (x < width - 1 and _escape[i + 1] and stone.edge_h_open(x + 1, y) and pk.pool_total(i + 1) <= GridWater.AIR_PASSABLE_MAX)
+						or (y > 0 and _escape[i - width] and stone.edge_v_open(x, y) and pk.pool_total(i - width) <= GridWater.AIR_PASSABLE_MAX)
+						or (y < height - 1 and _escape[i + width] and stone.edge_v_open(x, y + 1) and pk.pool_total(i + width) <= GridWater.AIR_PASSABLE_MAX)):
 					ok = true  # air flows through air
 				if ok:
 					_escape[i] = true

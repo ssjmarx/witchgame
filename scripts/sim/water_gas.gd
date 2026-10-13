@@ -46,7 +46,7 @@ func cell_pass(i: int, m: int, tick: int) -> void:
 	var visc := TilePacket.VISCOSITY[m]
 	var flip := -1 if (tick % 2 == 0) else 1
 	# 1) RISE — as much as the headroom above takes; the remainder is step two's business
-	if p.y > 0 and not stone.is_solid(p.x, p.y - 1):
+	if p.y > 0 and stone.drains_v(p.x, p.y) and stone.edge_v_open(p.x, p.y):
 		var a := i - width
 		var free := pk.pool_free(a)
 		if free > 0:
@@ -65,7 +65,7 @@ func cell_pass(i: int, m: int, tick: int) -> void:
 			var nx := p.x + dx
 			if nx < 0 or nx >= width:
 				continue
-			if stone.is_solid(nx, p.y):
+			if not stone.drains_h(p.x, p.y) or not stone.edge_h_open(maxi(p.x, nx), p.y):
 				continue
 			var n := pk.idx(nx, p.y)
 			var ng := pk.get_pool(n, m)
@@ -79,9 +79,8 @@ func cell_pass(i: int, m: int, tick: int) -> void:
 				crept += taken
 		if crept > 0:
 			return
-	# 3) UP-DIAGONAL HOP — blocked above and blocked beside: the remainder hops corner-ward; the flip shoulder takes half (odd unit included), the other the rest, so a lone shoulder drains all; the diagonal is sealed only when BOTH flanking corners hold no capacity — the tile above and the tile beside, terrain-solid or four subtiles — one solid corner is a corner to round
+	# 3) UP-DIAGONAL HOP — blocked above and blocked beside: the remainder hops corner-ward; the flip shoulder takes half (odd unit included), the other the rest, so a lone shoulder drains all; the diagonal is sealed when either opposed pair of corner cells is filled (the occlusion corner law) -- one solid corner is a corner to round
 	if p.y > 0 and g > 0:
-		var capped_above := pk.pool_capacity(i - width) == 0
 		for k in 2:
 			if g <= 0:
 				break
@@ -89,8 +88,8 @@ func cell_pass(i: int, m: int, tick: int) -> void:
 			var nx := p.x + dx
 			if nx < 0 or nx >= width:
 				continue
-			if capped_above and pk.pool_capacity(pk.idx(nx, p.y)) == 0:
-				continue   # pinched between two capacity-0 tiles: the sealed crack
+			if stone.blocks_diag(p.x, p.y, dx, -1):
+				continue   # pinched: either opposed pair of corner cells filled
 			var t := pk.idx(nx, p.y - 1)
 			var free := pk.pool_free(t)
 			if free <= 0:
@@ -109,11 +108,13 @@ func exchange_pass(tick: int) -> void:
 	var ltr := (tick % 2 == 0)
 	for y in height:
 		if ltr:
-			for x in range(width - 1):
-				_exchange_pair(pk.idx(x, y), pk.idx(x + 1, y))
+			for x in width - 1:
+				if stone.edge_h_open(x + 1, y):
+					_exchange_pair(pk.idx(x, y), pk.idx(x + 1, y))
 		else:
 			for x in range(width - 2, -1, -1):
-				_exchange_pair(pk.idx(x, y), pk.idx(x + 1, y))
+				if stone.edge_h_open(x + 1, y):
+					_exchange_pair(pk.idx(x, y), pk.idx(x + 1, y))
 
 ## Trade both gases between horizontal neighbors a and b: per gas half the difference (capped by SWAP), taking from both givers BEFORE any add — a full tile's inflow is covered by its own simultaneous outflow — and refused adds refund the giver, so scarce capacity pinches but never destroys.
 func _exchange_pair(a: int, b: int) -> void:
