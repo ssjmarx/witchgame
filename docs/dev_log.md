@@ -7,6 +7,47 @@ everything historical lives here. Newest entries first.*
 
 ---
 
+## The tileset lab, stage one: the bake pipeline (2026-10)
+
+The art pipeline ships: colorless baselines, bank-colored bakes, the palette as the
+only color source. The witch's sheet is its first customer.
+
+**Rulings:**
+
+- **Godot bakes, not python** — the baker runs headless in-engine (`-s
+  res://scripts/tools/bake_witch.gd`) and reads `Palette` constants directly, so the
+  palette law holds by construction; a bank change plus a re-bake cannot drift. No
+  second toolchain, no new dependency.
+- **The pipeline law**: sources are **colorless baselines** — grayscale index levels
+  (`Palette.BASELINE_LEVELS`, four evenly spaced levels for the tile banks to come)
+  under `assets/gray/`, regenerated only with `--regen` so hand-edits survive; bakes
+  under `assets/baked/` color them from banks and are never hand-edited. The witch
+  loads `assets/baked/` now.
+- **The real sheet quantized cleanly**: exactly three used colors plus transparency —
+  `#000000` outline → INK, `#53528c` body → INDIGO, `#fe0000` accents → RED. Zero
+  unmapped grays on the color pass.
+- **Two bugs the gate caught**: preload'd instance methods need `.new()` (parse
+  errors); and a double alpha division in `bake_lib` (`c.a / 255.0` on an
+  already-normalized float) made every opaque pixel alpha ≈ 1/255 — the baked witch
+  would have been invisible. PT5 caught it; fixed to `b.a = c.a`.
+- **The color-budget counter and DMG 4-shade mode are deferred** (user ruling:
+  polish out of scope) — banked in current_plan as ideas, not law.
+
+**Proofs:** PT4 (the quantizer maps used colors to slots, preserves alpha, warns past
+the bank), PT5 (the colorizer writes bank colors only, counts off-level grays).
+
+**The invisible-witch incident (caught by eyeball, not the gate):** the alpha fix
+landed in `bake_lib` but the first (buggy) run had already written the gray baseline
+with 1/255 art pixels; the fixed re-run without `--regen` faithfully re-colored the
+poisoned baseline — correct RGB, invisible alpha, witch gone in-game. PT4/PT5 never
+saw it because they build their own in-memory sources: the math was fixed, the
+artifact wasn't. Remediation: `--regen` (alphas verified `{0: 2387, 255: 1709}` on
+both files) and a standing guard — the baker now counts opaque pixels and fails
+loudly on zero. Lesson banked: **a file-producing tool must gate its own output;
+suite proofs of the math do not validate the artifact.**
+
+---
+
 ## The occlusion pass (2026-10, roadmap §1 shipped)
 
 Directional solidity on the tile pool — the roadmap's first post-audit lab. Ten suites

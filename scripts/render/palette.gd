@@ -52,6 +52,11 @@ const BANK_FIRE: Array[Color] = [RUST, RED, ORANGE, YELLOW]         # ember dark
 # -- Sprite banks: at most three plus transparency; the outline is a bank color ------
 const SPRITE_WITCH: Array[Color] = [INK, INDIGO, RED]   # placeholder until her sheet is re-quantized (her look is witchgame.md's)
 
+# -- The colorless baseline encoding (tileset lab): asset sources live as grayscale
+# index levels; the bake scripts color them from banks and only banks. Not drawn
+# game colors -- the encoding itself, four evenly spaced levels for tile banks to come.
+const BASELINE_LEVELS: Array[Color] = [Color("#000000"), Color("#555555"), Color("#aaaaaa"), Color("#ffffff")]
+
 # -- Debug and editor overlays: exempt from the law, never shipped art ------
 const DEBUG_GRID      := Color("#232b44")
 const DEBUG_CURSOR    := Color("#ffffff")

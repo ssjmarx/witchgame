@@ -5,7 +5,7 @@
 class_name Witch
 extends CharacterBody2D
 
-const SHEET := "res://assets/witch/witch-Sheet-outlined.png"
+const SHEET := "res://assets/baked/witch/witch-Sheet-outlined.png"
 const WALK := 80
 const CROUCH_WALK := 20
 const GRAVITY := 480        # shared legs
