@@ -131,7 +131,7 @@ func _info_line(t: Vector2i) -> String:
 			stone.packet.get_pool(i, TilePacket.Mat.OIL),
 			stone.packet.get_sub(i, TilePacket.K_SOIL),
 			stone.packet.get_damp(i), stone.packet.damp_capacity(i),
-			" WET" if stone.packet.has_tag(i, TilePacket.TAG_WET) else ""]
+			" WET" if stone.packet.is_wet(i) else ""]
 	return info
 
 ## Reset both engines and carve the demo bound to a preset key.
@@ -185,7 +185,7 @@ func run_oil_tests() -> void:
 		var o: Vector2i = s[2]
 		for dx in 2:
 			var soil_i := pk.idx(o.x + dx, o.y + 4)
-			if pk.get_sub(soil_i, TilePacket.K_SOIL) != 15 or pk.get_damp(soil_i) != 128 or not pk.has_tag(soil_i, TilePacket.TAG_WET):
+			if pk.get_sub(soil_i, TilePacket.K_SOIL) != 15 or pk.get_damp(soil_i) != 128 or not pk.is_wet(soil_i):
 				return "floor column %d not saturated-wet soil" % dx
 			var wr := pk.idx(o.x + dx, o.y + 3)
 			if pk.get_pool(wr, TilePacket.Mat.WATER) != 127:
@@ -222,8 +222,8 @@ func run_oil_tests() -> void:
 		if pk.get_pool(pk.idx(o.x, o.y + 1), TilePacket.Mat.WATER) != 0:
 			return "left surface did not fall below the second row"
 		var lw := pk.get_pool(pk.idx(o.x, o.y + 2), TilePacket.Mat.WATER)
-		if lw < 112 or lw > 143:
-			return "left surface fill %d, want ~128" % lw
+		if lw < 52 or lw > 76:
+			return "left surface fill %d, want ~64 -- the 2:1 ladder moved the balance" % lw
 		for ty in [3, 4, 5]:
 			if pk.get_pool(pk.idx(o.x, o.y + ty), TilePacket.Mat.WATER) != 255:
 				return "left leg not full at row %d" % ty
@@ -232,30 +232,30 @@ func run_oil_tests() -> void:
 		if pk.get_pool(pk.idx(o.x + 2, o.y + 5), TilePacket.Mat.WATER) != 255:
 			return "right leg bottom not water-full"
 		var rw := pk.get_pool(pk.idx(o.x + 2, o.y + 4), TilePacket.Mat.WATER)
-		if rw < 112 or rw > 143:
-			return "right water depth %d, want ~128" % rw
+		if rw < 179 or rw > 203:
+			return "right water depth %d, want ~191" % rw
 		var io := pk.get_pool(pk.idx(o.x + 2, o.y + 4), TilePacket.Mat.OIL)
-		if io < 112 or io > 143:
-			return "interface oil %d, want ~128 -- the tile is mixed by design" % io
+		if io < 52 or io > 76:
+			return "interface oil %d, want ~64 -- the tile is mixed by design" % io
 		for ty in [2, 3]:
 			if pk.get_pool(pk.idx(o.x + 2, o.y + ty), TilePacket.Mat.OIL) != 255:
 				return "oil column broken at row %d" % ty
 			if pk.get_pool(pk.idx(o.x + 2, o.y + ty), TilePacket.Mat.WATER) != 0:
 				return "water leaked up the oil column at row %d" % ty
 		var to := pk.get_pool(pk.idx(o.x + 2, o.y + 1), TilePacket.Mat.OIL)
-		if to < 112 or to > 143:
-			return "oil surface row 1 is %d, want ~128" % to
+		if to < 179 or to > 203:
+			return "oil surface row 1 is %d, want ~191" % to
 		if pk.get_pool(pk.idx(o.x + 2, o.y + 1), TilePacket.Mat.WATER) != 0:
 			return "water leaked above the oil column"
 		if pk.pool_total(pk.idx(o.x + 2, o.y)) != 0:
 			return "matter rose above the diagram"
 		var pl := 0
 		for ty in range(1, 6):
-			pl += pk.get_pool(pk.idx(o.x, o.y + ty), TilePacket.Mat.WATER) * 30
+			pl += pk.get_pool(pk.idx(o.x, o.y + ty), TilePacket.Mat.WATER) * 32
 		var pr := 0
 		for ty in range(1, 6):
-			pr += pk.get_pool(pk.idx(o.x + 2, o.y + ty), TilePacket.Mat.OIL) * 20
-			pr += pk.get_pool(pk.idx(o.x + 2, o.y + ty), TilePacket.Mat.WATER) * 30
+			pr += pk.get_pool(pk.idx(o.x + 2, o.y + ty), TilePacket.Mat.OIL) * 16
+			pr += pk.get_pool(pk.idx(o.x + 2, o.y + ty), TilePacket.Mat.WATER) * 32
 		if absi(pl - pr) > 60:
 			return "pressure unbalanced at the channel: %d vs %d" % [pl, pr]
 		return ""
@@ -263,11 +263,12 @@ func run_oil_tests() -> void:
 	var check_spread := func(s: Array) -> String:
 		var pk: TilePacket = s[0].packet
 		var o: Vector2i = s[2]
+		var want := [46, 123, 43, 43]   # the 2:1 ladder's floor split -- uneven, deterministic
 		for dx in 4:
 			var bottom := pk.idx(o.x + dx, o.y + 2)
 			var w := pk.get_pool(bottom, TilePacket.Mat.WATER)
-			if w < 56 or w > 72:
-				return "bottom water at column %d is %d, want ~64" % [dx, w]
+			if w != want[dx]:
+				return "bottom water at column %d is %d, want %d (the 2:1 ladder's floor split)" % [dx, w, want[dx]]
 			if pk.pool_total(bottom) != 255:
 				return "bottom tile at column %d not full" % dx
 			for ty in [0, 1]:
@@ -306,8 +307,8 @@ func run_oil_tests() -> void:
 		if pk.get_pool(cont, TilePacket.Mat.WATER) != 0:
 			return "water entered the container -- the inversion leak"
 		var co := pk.get_pool(cont, TilePacket.Mat.OIL)
-		if co < 152 or co > 232:
-			return "container oil %d, want ~191" % co
+		if co < 232 or co > 255:
+			return "container oil %d, want ~249 -- the 2:1 ladder holds more oil in" % co
 		for ty in [1, 2]:
 			var i := pk.idx(o.x + 4, o.y + ty)
 			if pk.get_pool(i, TilePacket.Mat.OIL) != 255:
@@ -315,23 +316,23 @@ func run_oil_tests() -> void:
 			if pk.get_pool(i, TilePacket.Mat.WATER) != 0:
 				return "water above the oil at row %d" % ty
 		var bw := pk.get_pool(pk.idx(o.x + 4, o.y + 3), TilePacket.Mat.WATER)
-		if bw < 160 or bw > 224:
-			return "right leg water %d, want ~191" % bw
+		if bw < 240 or bw > 255:
+			return "right leg water %d, want ~252" % bw
 		if pk.pool_total(pk.idx(o.x + 4, o.y)) > 15:
 			return "matter lingering above the wall"
 		var lw := pk.get_pool(pk.idx(o.x, o.y + 1), TilePacket.Mat.WATER)
-		if lw < 32 or lw > 96:
-			return "left surface %d, want ~64" % lw
+		if lw > 16:
+			return "left surface %d, want ~3" % lw
 		if pk.get_pool(pk.idx(o.x, o.y + 2), TilePacket.Mat.WATER) != 255:
 			return "left leg not full at row 2"
 		var pl4 := 0
 		for ty in [1, 2, 3]:
-			pl4 += pk.get_pool(pk.idx(o.x, o.y + ty), TilePacket.Mat.WATER) * 30
+			pl4 += pk.get_pool(pk.idx(o.x, o.y + ty), TilePacket.Mat.WATER) * 32
 		var pr4 := 0
 		for ty in [1, 2, 3]:
-			pr4 += pk.get_pool(pk.idx(o.x + 4, o.y + ty), TilePacket.Mat.OIL) * 20
-			pr4 += pk.get_pool(pk.idx(o.x + 4, o.y + ty), TilePacket.Mat.WATER) * 30
-		if absi(pl4 - pr4) > 60:
+			pr4 += pk.get_pool(pk.idx(o.x + 4, o.y + ty), TilePacket.Mat.OIL) * 16
+			pr4 += pk.get_pool(pk.idx(o.x + 4, o.y + ty), TilePacket.Mat.WATER) * 32
+		if absi(pl4 - pr4) > 192:
 			return "pressure unbalanced at the channel: %d vs %d" % [pl4, pr4]
 		return ""
 

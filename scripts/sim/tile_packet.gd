@@ -26,23 +26,21 @@ enum DebugTile { NONE, WATER_SOURCE, DRAIN, STEAM_VENT, OPEN_AIR }
 
 # -- Tuning tables -----------------------------------------------------------
 
-## Higher density sinks lower. Rest stack top->bottom:
-##   STEAM(5) SMOKE(10) OIL(20) WATER(30) ACID(40) LAVA(50)
-const DENSITY: Array[int] = [30, 20, 40, 50, 10, 5]
+## Heaviness, one byte-scaled table shared by materials and kinds (world §13): the six materials,
+## then the subtile kinds past K_DENSITY. Rest stack top->bottom:
+##   STEAM(1) SMOKE(2) WOOD_S(4) OIL(16) WATER(32) ACID(64) LAVA(128)
+## Stone_s and soil_s tie lava at 128 -- the medium rule's strict > makes equals sink. Every entry fits under the top bit, forever.
+const DENSITY: Array[int] = [32, 16, 64, 128, 2, 1, 128, 128, 4]
+const K_DENSITY := 6   # kinds index into DENSITY past the materials: stone_s, soil_s, wood_s
 
 ## Units per tick a material sorts toward its rest layer. Ruling:
 ## steam out-climbs acid's sink 8:1.
 const SORT_RATE: Array[int] = [2, 2, 1, 1, 3, 8]          # <tune>
 
 ## Sink rate through LIQUID for each subtile kind, subtile-steps per tick, column order
-## [stone_s, soil_s, wood_s]. The rest/fall decision reads SUB_DENSITY against DENSITY --
-## a solid rests in any pool material denser than itself (world §3); this table is the rate once sinking.
+## [stone_s, soil_s, wood_s]. The rest/fall decision reads DENSITY[K_DENSITY + kind] against the
+## materials -- a solid rests in any pool material denser than itself (world §3); this table is the rate once sinking.
 const SUB_SINK: Array[int] = [2, 1, -1]                   # <tune> — wood's entry documents the floater; the decision is density, not this row
-
-## Subtile-kind densities on the DENSITY scale -- the medium rule (world §3): a solid rests in
-## any pool material denser than itself and falls through the lighter, gas included. Stone and
-## soil sink through everything; wood floats on every liquid and falls through both gases.
-const SUB_DENSITY: Array[int] = [60, 55, 15]              # stone_s, soil_s, wood_s -- <tune>
 
 ## Per-material viscosity: throughput cap on every flow move (units per tick, per rule application). 255 = unthrottled, water-fast. The cap never changes an equilibrium -- only the pace of arriving -- and never binds for water (pool bytes cap at 255).
 const VISCOSITY: Array[int] = [255, 32, 255, 16, 255, 255]   # water oil acid lava smoke steam; <tune>
@@ -67,7 +65,6 @@ const K_WOOD := 2
 const DAMP_PER_SUB := 32   # damp capacity per soil subtile (ruling: 1:1 with water and steam)
 const DAMP_WOOD_PER_SUB := 16   # damp capacity per wood_s subtile since the cut -- half a soil subtile; replaces the retired WOOD_DAMP_CAP
 const BURN_POOL_PER_SUB := 64   # fuel-equivalents per wood_s subtile in the burn pool -- the flat per-subtile timer the doc promises
-const TAG_WET := 1        # body-tag bits; poisoned/tainted/holy/fertile arrive with the body-state system
 
 # -- Columns -----------------------------------------------------------------
 
@@ -85,10 +82,11 @@ var lava := PackedByteArray()
 var smoke := PackedByteArray()
 var steam := PackedByteArray()
 var damp := PackedByteArray()
-var tags := PackedByteArray()
-var fire_s := PackedByteArray()  # fire subtile bits -- overlay state: unbooked, displaces nothing
-var debug_s := PackedByteArray()  # debug furniture markers -- overlay state: unbooked, census column fifteen (the editor lab)
-var struct_s := PackedByteArray()  # structure membership nibble-pairs over the subtile layout -- overlay state: unbooked, census column fifteen since the retirement cut (the bedrock lab); a set bit fuses that cell into an authored structure
+var fire_s := PackedByteArray()  # fire subtile bits -- overlay state: unbooked, displaces nothing, census column eleven
+var debug_s := PackedByteArray()  # debug furniture markers -- overlay state: unbooked, census column twelve (the editor lab)
+var struct_s := PackedByteArray()  # structure membership nibble-pairs over the subtile layout -- overlay state: unbooked, census column thirteen (the bedrock lab); a set bit fuses that cell into an authored structure
+var res0 := PackedByteArray()  # reserved census column fourteen -- zero today, held for whatever comes (the 90s reserve)
+var res1 := PackedByteArray()  # reserved census column fifteen -- the reserve's second byte
 var actor_s := PackedByteArray()
 
 var _booked := PackedInt64Array()   # ledger: booked totals, one per row
@@ -116,10 +114,11 @@ func _init(p_w: int, p_h: int) -> void:
 	_booked.resize(LED_COUNT)
 	_present.resize(MAT_COUNT)
 	damp.resize(n)
-	tags.resize(n)
 	fire_s.resize(n)
 	debug_s.resize(n)
 	struct_s.resize(n)
+	res0.resize(n)
+	res1.resize(n)
 	actor_s.resize(n)
 	clear()
 
@@ -138,10 +137,11 @@ func clear() -> void:
 	_booked.fill(0)
 	_present.fill(0)
 	damp.fill(0)
-	tags.fill(0)
 	fire_s.fill(0)
 	debug_s.fill(0)
 	struct_s.fill(0)
+	res0.fill(0)
+	res1.fill(0)
 	actor_s.fill(0)
 	_fire_present = 0
 	_debug_present = 0
@@ -380,11 +380,10 @@ func assert_all() -> bool:
 			ok = false
 	return ok
 
-## Zero the damp and tag columns, booking the removal. (Clear/reset path.)
+## Zero the damp column, booking the removal. (Clear/reset path.)
 func clear_damp() -> void:
 	_book(Led.DAMP, -damp_total())
 	damp.fill(0)
-	tags.fill(0)
 
 ## Material id of the single lowest-density content at tile i; -1 when the pool is empty.
 func lightest_mat(i: int) -> int:
@@ -463,16 +462,10 @@ func damp_total() -> int:
 	for v in damp: sum += v
 	return sum
 
-## True when the tag bit is set at tile i.
-func has_tag(i: int, bit: int) -> bool:
-	return (tags[i] & bit) != 0
-
-## Set or clear one tag bit; tags are field state, never matter -- no booking.
-func set_tag(i: int, bit: int, on: bool) -> void:
-	if on:
-		tags[i] |= bit
-	else:
-		tags[i] &= 255 - bit
+## True when tile i reads wet -- damp above half its capacity, computed at read (world §3): no tag state, no staleness, no hysteresis; zero-capacity tiles never read wet.
+func is_wet(i: int) -> bool:
+	var cap := damp_capacity(i)
+	return cap > 0 and damp[i] * 2 > cap
 
 ## Sum of every pool material plus damp -- the harness conservation base (subtile matter rides its own ledger rows).
 func pool_damp_total() -> int:
@@ -543,10 +536,10 @@ func has_structures() -> bool:
 
 # -- Snapshot census (world.md §8) ------------------------------------------
 
-## The persistent column count -- the snapshot census: terrain, three subtile nibbles, six pool, damp, tags, fire bits, debug furniture, structure membership (FUEL left at the retirement cut).
-const COL_COUNT := 15
+## The persistent column count -- the snapshot census: terrain, three subtile nibbles, six pool, damp, fire bits, debug furniture, structure membership, two reserved zero columns (tags died at the cleanup cut, FUEL at the retirement cut).
+const COL_COUNT := 16
 
-## Rewrite a legacy census (fifteen columns before the structure pass, sixteen before the retirement cut) into the current fifteen: authored STONE, WOOD, and SOIL terrain convert to 4/4 matter and pre-fused membership, fixture indices renumber, the fuel column drops, and damp clamps to the new per-subtile capacity. Pure on the bytes; the caller rebuilds books and present counts.
+## Rewrite a legacy census (fifteen columns before the structure pass, sixteen before the retirement cut) into the current sixteen: authored STONE, WOOD, and SOIL terrain convert to 4/4 matter and pre-fused membership, fixture indices renumber, the fuel and tags columns drop, damp clamps to the new per-subtile capacity, and the reserved pair arrives zeroed. Pure on the bytes; the caller rebuilds books and present counts.
 func migrate_legacy_cols(cols: Array, p_w: int, p_h: int) -> Array:
 	var n := p_w * p_h
 	var terrain_c: PackedByteArray = cols[0].duplicate()
@@ -556,8 +549,8 @@ func migrate_legacy_cols(cols: Array, p_w: int, p_h: int) -> Array:
 	var damp_c: PackedByteArray = cols[10].duplicate()
 	var struct_c := PackedByteArray()
 	struct_c.resize(n)
-	if cols.size() > COL_COUNT:
-		struct_c = cols[COL_COUNT].duplicate()   # a Stage 2 save's membership rides along; an older save starts structure-free
+	if cols.size() > 15:
+		struct_c = cols[15].duplicate()   # a Stage 2 save's membership rides along; an older save starts structure-free
 	for i in n:
 		match terrain_c[i]:
 			1:   # legacy STONE
@@ -577,7 +570,11 @@ func migrate_legacy_cols(cols: Array, p_w: int, p_h: int) -> Array:
 				pass
 		var cap := DAMP_PER_SUB * POPCOUNT[soil_c[i]] + DAMP_WOOD_PER_SUB * POPCOUNT[wood_c[i]]
 		damp_c[i] = mini(damp_c[i], cap)
-	return [terrain_c, stone_c, soil_c, wood_c, cols[4].duplicate(), cols[5].duplicate(), cols[6].duplicate(), cols[7].duplicate(), cols[8].duplicate(), cols[9].duplicate(), damp_c, cols[11].duplicate(), cols[13].duplicate(), cols[14].duplicate(), struct_c]
+	var res_a := PackedByteArray()
+	res_a.resize(n)
+	var res_b := PackedByteArray()
+	res_b.resize(n)
+	return [terrain_c, stone_c, soil_c, wood_c, cols[4].duplicate(), cols[5].duplicate(), cols[6].duplicate(), cols[7].duplicate(), cols[8].duplicate(), cols[9].duplicate(), damp_c, cols[13].duplicate(), cols[14].duplicate(), struct_c, res_a, res_b]
 
 ## Live reference to persistent column i, census order (0..COL_COUNT-1) -- duplicate before storing it anywhere: packed arrays are references.
 func column(i: int) -> PackedByteArray:
@@ -593,10 +590,11 @@ func column(i: int) -> PackedByteArray:
 		8: return smoke
 		9: return steam
 		10: return damp
-		11: return tags
-		12: return fire_s
-		13: return debug_s
-		_: return struct_s
+		11: return fire_s
+		12: return debug_s
+		13: return struct_s
+		14: return res0
+		_: return res1
 
 ## Point persistent column i at bytes (restore path); the write bypasses books, present counts, and fire_present -- the caller rebuilds them.
 func load_column(i: int, b: PackedByteArray) -> void:
@@ -612,10 +610,11 @@ func load_column(i: int, b: PackedByteArray) -> void:
 		8: smoke = b
 		9: steam = b
 		10: damp = b
-		11: tags = b
-		12: fire_s = b
-		13: debug_s = b
-		_: struct_s = b
+		11: fire_s = b
+		12: debug_s = b
+		13: struct_s = b
+		14: res0 = b
+		_: res1 = b
 
 ## Recompute every booked row from fresh recounts -- the restore path's ledger rebuild; green asserts prove maintained == recounted, so this arrives consistent.
 func rebuild_books() -> void:

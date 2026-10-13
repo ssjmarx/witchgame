@@ -296,8 +296,8 @@ func _bt_dry() -> String:
 		return "heat %d, expected 0" % b.heat
 	if pk.mat_total(TilePacket.Mat.STEAM) != 64:
 		return "steam %d, expected 64" % pk.mat_total(TilePacket.Mat.STEAM)
-	if pk.has_tag(ground, TilePacket.TAG_WET):
-		return "wet tag survived the drain"
+	if pk.is_wet(ground):
+		return "the drained tile still reads wet"
 	if _family_total(r, b) != fam0:
 		return "family drifted %d" % (fam0 - _family_total(r, b))
 	return ""

@@ -7,6 +7,58 @@ everything historical lives here. Newest entries first.*
 
 ---
 
+## The cleanup cut (2026-10, roadmap §1 shipped)
+
+The plausibility audit's first deliverable: TAGS dies, the ladder goes pow2, the census
+pads to sixteen. One session, all nine suites green.
+
+**Rulings, in order:**
+
+- **TAGS retired as state** — the `tags` column, `TAG_WET`, `has_tag`/`set_tag`, and the
+  entire per-tick tag pass are gone. Wet is a computed read (`is_wet`: damp above half
+  capacity) — no staleness, no hysteresis; the 30%-floor band that survived as tag state
+  is the accepted flicker. The mortar seam and every test read the helper.
+- **The census is sixteen flat bytes** — column order [0]terrain [1-3]matter nibbles
+  [4-9]pool [10]damp [11]fire [12]debug [13]struct [14][15]**reserved zero** ("a real
+  90s reserve"). Editor slots version 4; version-3 blobs remap (tags dropped, tail
+  shifted, reserve appended); pre-retirement blobs flow through `migrate_legacy_cols`,
+  which now detects the Stage-2 format by `cols.size() > 15` — not `> COL_COUNT`, which
+  the pad broke.
+- **One byte-scaled heaviness table** — `SUB_DENSITY` is dead as a concept; `DENSITY`
+  is nine entries with the kinds indexing past `K_DENSITY` 6: steam 1 · smoke 2 ·
+  wood_s 4 · oil 16 · water 32 · acid 64 · lava 128 · stone_s 128 · soil_s 128. Every
+  entry under the top bit. Stone and soil TIE lava — the medium rule's strict `>` makes
+  equals sink, so no kind needs to out-rank another. (The audit's first ladder had
+  512s in it — magnitude vanity; the tie ruling halved everything into one byte.)
+- **Fire constants** — `BURN_RATE` 32 (a 4/4 tile's 256-pool burns in exactly 8 ticks),
+  `IGNITE_WOOD` 4 (front at 2.5 tiles/s; smother delay follows at 4 by the symmetry
+  law). `PRESSURE_RATE` stays 64: the coupled-retune idea (halve it with the ladder)
+  was wrong because the ladder is not a uniform rescale — water went 30→32, so halving
+  the cap genuinely halved water's seek pace (UT1/UT4 failed identically at both
+  values until the revert).
+
+**Equilibrium shifts, honestly pinned** (the 2:1 water:oil ratio is real physics, not
+a restyle): UT1's manometer balance moved (left 128→64, right 128→191); UT2's floor
+split under oil is now uneven (46/123/43/43 — exact-pinned); UT4's container holds 249
+oil with a ~0.9% crude-sum balance (tolerance 60→192). The checks' hardcoded ×30/×20
+head multipliers now read ×32/×16. FT retimes: FT3's siege leaves damp 10 (the faster
+burn boils less), FT6 needed a 2-tall wood column (a single W now burns out in 8 ticks
+< the 11-tick window), FT8's pace pins are 7/0/63 at t10, FT11's one-tick dump is 128.
+
+**FT7's wall reshape — the one real physics casualty:** the old example's wall was
+welded to the shell (x=0, breathing only through itself); at 128 smoke/tick the
+ignition accrual never holds 4 consecutive eligible ticks and rows 2-1-0 never catch —
+a permanent stall, probed live. A wall with air on both sides ([".W."]×5) climbs and
+burns through by ~tick 47. Lesson banked: **vertical fronts breathe through their
+shafts; a shell-welded column is a chimney with no draw.** The example now uses the
+breathing wall.
+
+**Docs:** world.md §2/§3/§13/E2 synced (sixteen-column census, computed wet, the
+ladder, BURN_RATE 32, IGNITE_WOOD 4, SUB_DENSITY folded); current_plan.md §1 deleted
+(shipped), remaining sections renumbered; this entry.
+
+---
+
 ## The bedrock arc + the plausibility audit (2026-10, post-editor-lab through the nits)
 
 The arc that took the engine from wood-terrain to pure subtile matter, then audited

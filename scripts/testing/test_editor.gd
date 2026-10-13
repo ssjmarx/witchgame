@@ -276,18 +276,18 @@ func _load_slots() -> void:
 		else:
 			_carve_preset(rooms[k].stone, rooms[k].water, rows, rooms[k].sand.structures)
 
-## Snapshot the observed room into slot k's file as an opaque census blob (the level format keeps its own lab); a crossed save also restores it into room k, live. Version 3: the retirement cut's fifteen columns.
+## Snapshot the observed room into slot k's file as an opaque census blob (the level format keeps its own lab); a crossed save also restores it into room k, live. Version 4: the cleanup cut's sixteen columns.
 func _save_slot(k: int) -> void:
 	var s := rooms[observed].snapshot()
 	var f := FileAccess.open(SLOT_PATH % k, FileAccess.WRITE)
 	if f == null:
 		return
-	f.store_var({"v": 3, "cols": s.cols, "ign": s.ignition, "wb": s.woodburn, "wt": s.water_ticks, "st": s.sand_ticks})
+	f.store_var({"v": 4, "cols": s.cols, "ign": s.ignition, "wb": s.woodburn, "wt": s.water_ticks, "st": s.sand_ticks})
 	f.close()
 	if k != observed:
 		rooms[k].restore(s)
 
-## Read slot k's census from disk as a RoomState; null when no file exists and the carve path takes over. Pre-version blobs migrate: authored terrain converts to pre-fused matter and the fuel column drops (world §3).
+## Read slot k's census from disk as a RoomState; null when no file exists and the carve path takes over. Pre-version blobs migrate: authored terrain converts to pre-fused matter and the fuel column drops (world §3); version 3's fifteen columns drop the tags column and gain the reserved pair.
 func _read_slot(k: int) -> RoomState:
 	var f := FileAccess.open(SLOT_PATH % k, FileAccess.READ)
 	if f == null:
@@ -301,6 +301,15 @@ func _read_slot(k: int) -> RoomState:
 		s.cols.clear()
 		for col in migrated:
 			s.cols.append(col)
+	elif int(d.get("v", 0)) == 3:
+		# version 3's fifteen: tags at eleven dies -- shift fire, debug, struct down one, append the zeroed reserve
+		var n := s.cols[0].size()
+		var remapped: Array = [s.cols[0], s.cols[1], s.cols[2], s.cols[3], s.cols[4], s.cols[5], s.cols[6], s.cols[7], s.cols[8], s.cols[9], s.cols[10], s.cols[12], s.cols[13], s.cols[14]]
+		var zero := PackedByteArray()
+		zero.resize(n)
+		remapped.append(zero)
+		remapped.append(zero.duplicate())
+		s.cols = remapped
 	s.ignition = d["ign"]
 	if d.has("wb"):
 		s.woodburn = d["wb"]

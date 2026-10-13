@@ -218,16 +218,16 @@ func _enterable(x: int, y: int) -> bool:
 		return true
 	return water.headroom_above(x, y)
 
-## May kind take a diagonal move? The mortar seam: a wet-tagged tile reads the sticky row -- slide-off (and lateral creep, when it exists) gates here, fall never does. Tags are one tick stale (the _escape pattern).
+## May kind take a diagonal move? The mortar seam: a wet tile reads the sticky row -- slide-off (and lateral creep, when it exists) gates here, fall never does. Wet is computed from damp at read (world §3), so the seam is never stale.
 func _can_slide(kind: int, i: int) -> bool:
-	if pk.has_tag(i, TilePacket.TAG_WET):
+	if pk.is_wet(i):
 		return SLIDE_WET[kind]
 	return SLIDE[kind]
 
-## The medium rule (world §3): rest (0) in any pool material denser than the solid -- buoyancy reads the density chart; otherwise sink at SUB_SINK through liquid, fall at FALL through gas and air. Solids never enter occupied solids -- the expanded grid's occupancy check, unchanged.
+## The medium rule (world §3): rest (0) in any pool material denser than the solid -- buoyancy reads the one heaviness table (materials, then kinds past K_DENSITY); equals sink, the comparison is strict. Otherwise sink at SUB_SINK through liquid, fall at FALL through gas and air. Solids never enter occupied solids -- the expanded grid's occupancy check, unchanged.
 func _medium_rate(i: int, kind: int) -> int:
 	for m in TilePacket.MAT_COUNT:
-		if pk.get_pool(i, m) > 0 and TilePacket.DENSITY[m] > TilePacket.SUB_DENSITY[kind]:
+		if pk.get_pool(i, m) > 0 and TilePacket.DENSITY[m] > TilePacket.DENSITY[TilePacket.K_DENSITY + kind]:
 			return 0   # something denser holds the solid up
 	for m in TilePacket.MAT_COUNT:
 		if pk.get_pool(i, m) > 0 and m != TilePacket.Mat.SMOKE and m != TilePacket.Mat.STEAM:

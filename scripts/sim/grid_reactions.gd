@@ -1,6 +1,6 @@
 ## The chemical reaction engine -- the third system beside liquid and solid movement: soak
 ## trades pool water for damp, and the fire solver burns wood_s through the burn-pool overlay (64
-## fuel-equivalents per subtile at the flat rate, each emptied subtile's bit clearing through the cut), boils the ladder, vents smoke, engulfs, counts ignition contact, condenses steam off stone, refreshes tags; the packet assert closes the tick (reactions run last).
+## fuel-equivalents per subtile at the flat rate, each emptied subtile's bit clearing through the cut), boils the ladder, vents smoke, engulfs, counts ignition contact, condenses steam off stone; the packet assert closes the tick (reactions run last).
 
 class_name GridReactions
 extends RefCounted
@@ -13,10 +13,10 @@ const SOAK_MAX := 16   # soak-rate ceiling; floor division means 15 is the effec
 
 # -- fire tuning (world.md §13, locked) ---------------------------------------
 
-const BURN_RATE := 24        # burn-pool units per tick per burning tile -- constant, never ventilation-modulated
+const BURN_RATE := 32        # burn-pool units per tick per burning tile -- constant, never ventilation-modulated; a 4/4 tile's 256-pool burns in exactly 8 ticks
 const OIL_PER_FUEL := 4      # one oil unit carries four burn-pool units of energy; 255 oil burns 4x a 255-pool tile
 const SMOKE_PER_UNIT := 4    # smoke per material unit burned -- a production rate, not an invariant (un-vented remainder is un-made)
-const IGNITE_WOOD := 5       # contact ticks to catch -- the front walks 2 tiles/s
+const IGNITE_WOOD := 4       # contact ticks to catch -- the front walks 2.5 tiles/s
 const IGNITE_OIL := 1        # oil flashes on contact
 const BOIL_W: Array[int] = [8, 4, 2]   # standing water per fire bit at Manhattan distance 0/1/2
 const BOIL_D: Array[int] = [4, 2, 1]   # damp per bit at the same distances -- half the water rate everywhere
@@ -71,7 +71,7 @@ func clear() -> void:
 	_starved.fill(0)
 	burned_units = 0
 
-## One tick: soak, then the fire solver, then ignition and condensation, then tags (reactions run last, so the end-of-tick assert is theirs). Soak precedes fire by ruling: the puddle drinks before the flame boils what is left of it.
+## One tick: soak, then the fire solver, then ignition and condensation (reactions run last, so the end-of-tick assert is theirs). Soak precedes fire by ruling: the puddle drinks before the flame boils what is left of it.
 func tick() -> void:
 	if pk.has_mat(W):
 		_soak_pass()
@@ -81,7 +81,6 @@ func tick() -> void:
 	else:
 		_ignition.fill(0)
 	_condense_pass()
-	_tag_pass()
 	pk.assert_all()
 
 ## God-hand ignite at (x, y): wood_s catches when bone-dry and its gates pass, oil flashes, bare air sparks one dying bit, wet wood refuses. Returns true when something lit (the spark counts).
@@ -435,7 +434,7 @@ func _stone_touch(i: int) -> bool:
 			return true
 	return false
 
-# -- Soak and tags (shipped, unchanged) -----------------------------------------
+# -- Soak (shipped, unchanged) ----------------------------------------------
 
 ## Soak pass: each water-bearing tile drinks clampi(w/16, 1, 16) per tick into the first headroom down its column -- its own soil, else through saturated soil below. Water never soaks across air, water-only tiles, or solid terrain.
 func _soak_pass() -> void:
@@ -467,19 +466,6 @@ func _soak_target(i: int) -> int:
 			return below
 		d = below
 	return -1
-
-## Refresh wet tags from damp: gain above 50% of capacity, lose below 30% -- hysteresis, so the tag is state that survives the band. Zero-capacity tiles never carry it.
-func _tag_pass() -> void:
-	for i in width * height:
-		var cap := pk.damp_capacity(i)
-		if cap == 0:
-			pk.set_tag(i, TilePacket.TAG_WET, false)
-			continue
-		var d := pk.get_damp(i)
-		if d * 2 > cap:
-			pk.set_tag(i, TilePacket.TAG_WET, true)
-		elif d * 10 < cap * 3:
-			pk.set_tag(i, TilePacket.TAG_WET, false)
 
 ## The ignition overlay, value-copied for a room snapshot; the timer is persistent, the suppression mask is not.
 func snapshot_ignition() -> PackedByteArray:

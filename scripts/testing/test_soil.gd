@@ -129,7 +129,7 @@ func _info_line(t: Vector2i) -> String:
 		var i := stone.idx(t.x, t.y)
 		var n: int = stone.packet.get_sub(i, TilePacket.K_SOIL)
 		var d: int = stone.packet.get_damp(i)
-		info += "   soil %d   damp %d/%d%s" % [n, d, stone.packet.damp_capacity(i), " WET" if stone.packet.has_tag(i, TilePacket.TAG_WET) else ""]
+		info += "   soil %d   damp %d/%d%s" % [n, d, stone.packet.damp_capacity(i), " WET" if stone.packet.is_wet(i) else ""]
 	return info
 
 ## Reset both engines and carve the demo bound to a preset key.
@@ -195,8 +195,8 @@ func run_soil_tests() -> void:
 			return "soil did not compact into the floor tile"
 		if pk.get_damp(floor_i) != 128:
 			return "soil did not saturate (damp %d)" % pk.get_damp(floor_i)
-		if not pk.has_tag(floor_i, TilePacket.TAG_WET):
-			return "saturated soil is not wet-tagged"
+		if not pk.is_wet(floor_i):
+			return "saturated soil does not read wet"
 		if pk.get_pool(pk.idx(o.x, o.y + 1), TilePacket.Mat.WATER) != 127:
 			return "equilibrium water is %d, want 127" % pk.get_pool(pk.idx(o.x, o.y + 1), TilePacket.Mat.WATER)
 		if pk.get_pool(floor_i, TilePacket.Mat.WATER) != 0 or pk.get_sub(pk.idx(o.x, o.y + 1), TilePacket.K_SOIL) != 0:
@@ -214,7 +214,7 @@ func run_soil_tests() -> void:
 			var line := "     "
 			for dx in 2:
 				var i := pk.idx(o.x + dx, o.y + ty)
-				line += "[soil %2d w %3d d %3d %s]  " % [pk.get_sub(i, TilePacket.K_SOIL), pk.get_pool(i, TilePacket.Mat.WATER), pk.get_damp(i), "WET" if pk.has_tag(i, TilePacket.TAG_WET) else "--"]
+				line += "[soil %2d w %3d d %3d %s]  " % [pk.get_sub(i, TilePacket.K_SOIL), pk.get_pool(i, TilePacket.Mat.WATER), pk.get_damp(i), "WET" if pk.is_wet(i) else "--"]
 			rows.append(line)
 		return "\n" + "\n".join(rows)
 
@@ -223,7 +223,7 @@ func run_soil_tests() -> void:
 		var o: Vector2i = s[2]
 		for dx in 2:
 			var soil_i := pk.idx(o.x + dx, o.y + 4)
-			if pk.get_sub(soil_i, TilePacket.K_SOIL) != 15 or pk.get_damp(soil_i) != 128 or not pk.has_tag(soil_i, TilePacket.TAG_WET):
+			if pk.get_sub(soil_i, TilePacket.K_SOIL) != 15 or pk.get_damp(soil_i) != 128 or not pk.is_wet(soil_i):
 				return "floor column %d not saturated-wet soil" % dx
 			if pk.get_pool(pk.idx(o.x + dx, o.y + 3), TilePacket.Mat.WATER) != 255:
 				return "column %d bottom water row is not full" % dx
@@ -245,8 +245,8 @@ func run_soil_tests() -> void:
 			var i := pk.idx(o.x, o.y + 1 + ty)
 			if pk.get_damp(i) != want[ty]:
 				return "soil row %d damp %d, want %d" % [ty, pk.get_damp(i), want[ty]]
-			if pk.has_tag(i, TilePacket.TAG_WET) != wet[ty]:
-				return "soil row %d tag mismatch" % ty
+			if pk.is_wet(i) != wet[ty]:
+				return "soil row %d wet mismatch" % ty
 		return ""
 
 	var check_sealed := func(s: Array) -> String:
@@ -268,7 +268,6 @@ func run_soil_tests() -> void:
 		for ty in 3:
 			var i := pk.idx(o.x + 1, o.y + ty)
 			pk.add_damp(i, 65)
-			pk.set_tag(i, TilePacket.TAG_WET, true)
 
 	var check_mortar := func(s: Array) -> String:
 		var pk: TilePacket = s[0].packet
@@ -297,15 +296,15 @@ func run_soil_tests() -> void:
 		var i := pk.idx(s[2].x, s[2].y)
 		if pk.get_damp(i) != 65:
 			return "damp drifted (%d)" % pk.get_damp(i)
-		if not pk.has_tag(i, TilePacket.TAG_WET):
-			return "tag never gained at 65/128"
+		if not pk.is_wet(i):
+			return "tile does not read wet at 65/128"
 		return ""
 
 	var check_tag_off := func(s: Array) -> String:
 		var pk: TilePacket = s[0].packet
 		var i := pk.idx(s[2].x, s[2].y)
-		if pk.has_tag(i, TilePacket.TAG_WET):
-			return "tag gained inside the band (40/128)"
+		if pk.is_wet(i):
+			return "reads wet below half (40/128)"
 		return ""
 	
 	_test("ST1  column spreads to a staircase", KEY_F1, check_spread)
@@ -316,8 +315,8 @@ func run_soil_tests() -> void:
 	_test("ST6  sealed column sorts by density", KEY_F7, check_sealed)
 	_test("ST7  percolation skip fills deep soil", KEY_F9, check_skip)
 	_run_example("ST8  wet mortar holds the column", PRESETS[KEY_F10], check_mortar, setup_wet)
-	_run_example("ST9  wet tag gains above half capacity", PRESETS[KEY_F11], check_tag_on, damp_at.call(65))
-	_run_example("ST10 band damp never gains the tag", PRESETS[KEY_F11], check_tag_off, damp_at.call(40))
+	_run_example("ST9  damp above half reads wet", PRESETS[KEY_F11], check_tag_on, damp_at.call(65))
+	_run_example("ST10 damp below half reads dry", PRESETS[KEY_F11], check_tag_off, damp_at.call(40))
 	_st_sealed_sort()
 	print("== done ==")
 

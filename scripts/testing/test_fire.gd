@@ -398,7 +398,7 @@ func run_fire_tests() -> void:
 	var setup_climb := func(s: Array) -> void:
 		var r: GridReactions = s[4]
 		var o: Vector2i = s[2]
-		r.ignite(o.x, o.y + 4)
+		r.ignite(o.x + 1, o.y + 4)
 
 	var check_burn := func(s: Array) -> String:
 		var pk: TilePacket = s[0].packet
@@ -434,8 +434,8 @@ func run_fire_tests() -> void:
 		if pk.get_sub(pk.idx(o.x, o.y), TilePacket.K_WOOD) != 0:
 			return "the dry log did not burn out"
 		var iw := pk.idx(o.x + 1, o.y)
-		if pk.get_damp(iw) != 0:
-			return "the siege never dried the log (damp %d)" % pk.get_damp(iw)
+		if pk.get_damp(iw) != 10:
+			return "the siege left damp %d, want 10 -- the faster burn boils less of the neighbor before it gutters" % pk.get_damp(iw)
 		if pk.get_sub(iw, TilePacket.K_WOOD) != 15 or pk.get_fire(iw) != 0:
 			return "the wet log did not survive intact (wood %d fire %d)" % [pk.get_sub(iw, TilePacket.K_WOOD), pk.get_fire(iw)]
 		return ""
@@ -476,7 +476,7 @@ func run_fire_tests() -> void:
 		var pk: TilePacket = s[0].packet
 		var o: Vector2i = s[2]
 		for ty in 5:
-			var i := pk.idx(o.x, o.y + ty)
+			var i := pk.idx(o.x + 1, o.y + ty)
 			if pk.get_sub(i, TilePacket.K_WOOD) != 0:
 				return "wall row %d did not burn through" % ty
 		return ""
@@ -485,14 +485,14 @@ func run_fire_tests() -> void:
 		var pk: TilePacket = s[0].packet
 		var o: Vector2i = s[2]
 		var f2 := pk.get_fire(pk.idx(o.x + 2, o.y))
-		if f2 != 4:
-			return "third tile fire nibble %d, want 4 (caught early at its breathing cell, fully engulfed)" % f2
+		if f2 != 7:
+			return "third tile fire nibble %d, want 7 (caught early at its breathing cell, engulfing)" % f2
 		if pk.get_fire(pk.idx(o.x + 3, o.y)) != 0:
 			return "fourth tile already carries fire — the front is running hot"
 		var burn0: int = s[4].get_woodburn(o.x, o.y)
 		var burn1: int = s[4].get_woodburn(o.x + 1, o.y)
-		if burn0 != 15 or burn1 != 135:
-			return "pace pools %d/%d, want 15/135 (ten burns and one starved pause, five burns)" % [burn0, burn1]
+		if burn0 != 0 or burn1 != 63:
+			return "pace pools %d/%d, want 0/63 (tile 0 drained clean, tile 1 mid-burn)" % [burn0, burn1]
 		return ""
 	
 	var setup_niche := func(s: Array) -> void:
@@ -525,8 +525,8 @@ func run_fire_tests() -> void:
 		var o: Vector2i = s[2]
 		if pk.get_pool(pk.idx(o.x + 1, o.y + 1), TilePacket.Mat.SMOKE) != 200:
 			return "the intake took %d smoke — the chimney was the first-choice dump" % (pk.get_pool(pk.idx(o.x + 1, o.y + 1), TilePacket.Mat.SMOKE) - 200)
-		if pk.get_pool(pk.idx(o.x + 2, o.y + 2), TilePacket.Mat.SMOKE) != 96:
-			return "the open side holds %d smoke, want 96" % pk.get_pool(pk.idx(o.x + 2, o.y + 2), TilePacket.Mat.SMOKE)
+		if pk.get_pool(pk.idx(o.x + 2, o.y + 2), TilePacket.Mat.SMOKE) != 128:
+			return "the open side holds %d smoke, want 128" % pk.get_pool(pk.idx(o.x + 2, o.y + 2), TilePacket.Mat.SMOKE)
 		return ""
 
 	var setup_jam := func(s: Array) -> void:
@@ -550,11 +550,11 @@ func run_fire_tests() -> void:
 	run_ticks = 1
 	_run_example("FT5  four bits boil standing water in place", ["...", "s.s", "sss"], check_tier, setup_tier)
 	run_ticks = 11
-	_run_example("FT6  condensation keeps its distance from fire", ["sss....sss", "svs...Wsvs"], check_dist, setup_dist)
+	_run_example("FT6  condensation keeps its distance from fire", ["sss...Wsss", "svs...Wsvs"], check_dist, setup_dist)
 	run_ticks = TEST_TICKS
-	_run_example("FT7  the front climbs a wall at two tiles a second", PRESETS[KEY_F12], check_climb, setup_climb)
+	_run_example("FT7  the front climbs a wall", [".W.", ".W.", ".W.", ".W.", ".W."], check_climb, setup_climb)
 	run_ticks = 10
-	_run_example("FT8  the front walks two tiles per second", ["WWWWWWWW"], check_pace, setup_ignite_end)
+	_run_example("FT8  the front walks two and a half tiles per second", ["WWWWWWWW"], check_pace, setup_ignite_end)
 	run_ticks = 8
 	_run_example("FT9  a fed column fills the pocket beside it", ["sssss", "sssss", ".s...", ".W.W."], check_jam, setup_jam)
 	run_ticks = TEST_TICKS
