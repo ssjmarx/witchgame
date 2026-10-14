@@ -46,7 +46,7 @@ func _init(terrain: GridStone, field: GridWater) -> void:
 	_body.resize(terrain.width)
 
 
-## Paint one tile's liquid: resting bodies distribute their volume across the open subtile rows (per-cell compositing: solid cells draw nothing); falling streams draw the rain field, heavy columns the waterfall read (fill plus rain), fast lateral or diagonal flow the phase-hashed waves -- rapids outrank the waterfall read, and the special-draw bank guarantees every special picture plays at least one full animation cycle after its conditions cease (a class-latched byte of view state; the waterline returns only after a quiet cycle). The crestline is a banked class too: any partial surface row (including a brim-full surface cresting on its empty top row) latches CL_CREST and keeps rolling its four-tick grace after the waterline drops -- its step and row follow the live waterline while it qualifies, and it may only draw at the top of a body: liquid drawn above it in this pass disqualifies it, so one body carries exactly one crestline. The full-water override outranks every animation: a pinned tile, or a wave playing under real water, draws a solid column without touching the bank bytes. The pin runs through here: an animating surface (a wave, a wave replay, or a bottom-row crest) pins the single supported wet tile below to full rows in the surface's kind -- no chaining, stone absorbs it, falling tiles never pin or receive -- so it needs the top-down pass order (redraw scans y ascending).
+## Paint one tile's liquid: resting bodies distribute their volume across the open subtile rows (per-cell compositing: solid cells draw nothing); falling streams draw the rain field, heavy columns the waterfall read (fill plus rain), fast lateral or diagonal flow the phase-hashed waves -- rapids outrank the waterfall read, and the special-draw bank guarantees every special picture plays at least one full animation cycle after its conditions cease (a class-latched byte of view state; the waterline returns only after a quiet cycle). The crestline is a banked class too: any partial surface row (including a brim-full surface cresting on its empty top row) latches CL_CREST and keeps rolling its four-tick grace after the waterline drops -- its step and row follow the live waterline while it qualifies, and it may only draw at the top of a body: liquid drawn above it in this pass disqualifies it, so one body carries exactly one crestline. The full-water override outranks every animation: a pinned tile, or a wave playing under real water, draws a solid column without touching the bank bytes. Actor claims factor the lines: the occupied tiles' drawn level reads liquid plus the claim's displaced volume -- the body's true local waterline, so she walks behind a solid curtain instead of transparency and rain. The pin runs through here: an animating surface (a wave, a wave replay, or a bottom-row crest) pins the single supported wet tile below to full rows in the surface's kind -- no chaining, stone absorbs it, falling tiles never pin or receive -- so it needs the top-down pass order (redraw scans y ascending).
 func paint(x: int, y: int, px: int, py: int, blit: Callable) -> void:
 	var i := stone.idx(x, y)
 	if y == 0:
@@ -148,11 +148,13 @@ func paint(x: int, y: int, px: int, py: int, blit: Callable) -> void:
 		return
 	var kind := _kind_now(i, liq)
 	var crest_v := (water.tick_count >> 3) & 1   # the synchronized ping-pong: one wave every eight ticks, every crest in lockstep
+	var claim := TilePacket.SUB_DISPLACE * pk.get_actor_claim(i)   # the bridge's displacement -- the true local waterline sits this much higher than the tile's own liquid (seek-level raises the neighbors to the same total)
+	var liq_draw := liq + claim
 	var open_b := 2 - TilePacket.POPCOUNT[pattern & BOTTOM_MASK]
 	var open_t := 2 - TilePacket.POPCOUNT[pattern & TOP_MASK]
 	@warning_ignore("integer_division")
-	var d_b := clampi(liq / maxi(8 * open_b, 8), 0, 8)
-	var rem := maxi(liq - 64 * open_b, 0)
+	var d_b := clampi(liq_draw / maxi(8 * open_b, 8), 0, 8)
+	var rem := maxi(liq_draw - 64 * open_b, 0)
 	@warning_ignore("integer_division")
 	var d_t := clampi(rem / maxi(8 * open_t, 8), 0, 8)
 	# the full-water override outranks any playing animation: pinned, or a wave playing under real water -- solid column, bank bytes untouched
@@ -282,9 +284,9 @@ func _raining_above(x: int, y: int, kind: String) -> int:
 	return 0 if below_full else liq
 
 
-## The subtile-aware full read: the tile cannot accept one more LINE of liquid -- its pool total plus its solid subtiles' volume crosses the 240 line (so a stone, wood, or soil shelf raises the waterline's full mark with it) (world §9).
+## The subtile-aware full read: the tile cannot accept one more LINE of liquid -- its pool total plus its solid subtiles' and actor claims' volume crosses the 240 line (a stone shelf or a standing body raises the waterline's full mark with it) (world §9).
 func _below_full(b: int) -> bool:
-	return _liquid_total(b) + 64 * TilePacket.POPCOUNT[pk.occlusion_bits(b)] >= 240
+	return _liquid_total(b) + 64 * TilePacket.POPCOUNT[pk.occlusion_bits(b)] + TilePacket.SUB_DISPLACE * pk.get_actor_claim(b) >= 240
 
 ## The kind for a draw: the dry-gap replay override while a banked picture plays out, else the live read.
 func _kind_now(i: int, liq: int) -> String:
