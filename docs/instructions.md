@@ -15,6 +15,7 @@ The game design documents are the canonical vision for the game, subject to upda
 The agent may read, create, edit, and delete files anywhere in the project as the task requires. Three standing cautions:
 
 - `docs/PROJECT_MAP.md` is **generated** by `build_project_map.py` — never hand-edit it; fix the docstrings in the `.gd` sources and re-run the audit.
+- **File edits go through the file-modification tool, never the command line.** No shell heredocs, `sed -i`, `python` write scripts, or redirection to patch files — read commands are fine, but any write to a project file uses the editor tool.
 - `.godot/` is engine cache — never touch it directly; rescan instead (§7).
 - `.aider*` files are retired artifacts of the pre-migration tool — never recreate or commit them.
 

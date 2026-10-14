@@ -214,7 +214,7 @@ func _cell_pass(i: int, m: int) -> void:
 			flow_stamp(b, FlowDir.DOWN, taken)
 			return
 
-	# 2) POUR — over a lip into dry space only (leveling is seek-level's job)
+	# 2) POUR — over a lip, whatever fits; the remainder keeps moving (step 2: creep)
 	if p.y + 1 < height:
 		for k in 2:
 			var dx := flip if k == 0 else -flip
@@ -225,12 +225,12 @@ func _cell_pass(i: int, m: int) -> void:
 				continue  # the corner is pinched -- no pouring through a sealed diagonal (world §3)
 			var t := idx(tx, p.y + 1)
 			var free := pk.pool_free(t)
-			if pk.pool_total(t) < LINE and free > 0:
+			if free > 0:
 				var move := mini(mini(w, free), visc)
 				var taken := pk.take_pool(i, m, move)
 				pk.add_pool(t, m, taken)
 				flow_stamp(t, FlowDir.DOWN_RIGHT if dx > 0 else FlowDir.DOWN_LEFT, taken)
-				return
+				w = pk.get_pool(i, m)
 
 	# 3) CREEP -- advance into dry space, both sides, half-difference capped by the target's free capacity and viscosity
 	for k in 2:

@@ -263,12 +263,12 @@ func run_oil_tests() -> void:
 	var check_spread := func(s: Array) -> String:
 		var pk: TilePacket = s[0].packet
 		var o: Vector2i = s[2]
-		var want := [46, 123, 43, 43]   # the 2:1 ladder's floor split -- uneven, deterministic
+		var want := [65, 64, 62, 64]   # the even floor spread -- the widened pour levels the floor under oil
 		for dx in 4:
 			var bottom := pk.idx(o.x + dx, o.y + 2)
 			var w := pk.get_pool(bottom, TilePacket.Mat.WATER)
 			if w != want[dx]:
-				return "bottom water at column %d is %d, want %d (the 2:1 ladder's floor split)" % [dx, w, want[dx]]
+				return "bottom water at column %d is %d, want %d (the even floor spread under oil)" % [dx, w, want[dx]]
 			if pk.pool_total(bottom) != 255:
 				return "bottom tile at column %d not full" % dx
 			for ty in [0, 1]:
