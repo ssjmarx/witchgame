@@ -52,6 +52,23 @@ const PRESETS := {
 		".sw",
 		".ss",
 	],
+	KEY_F9: [
+		"ws.s",
+		"ws.s",
+		"ssss",
+	],
+	KEY_F10: [
+		"wssw",
+		"wssw",
+		"ssss",
+	],
+	KEY_F11: [
+		"sssss",
+		"..s..",
+		"..s..",
+		"..s..",
+		"sssss",
+	],
 }
 
 var sand: GridSand
@@ -95,7 +112,7 @@ func _load_preset(keycode: int) -> void:
 
 ## Controls listing for the occlusion sandbox.
 func _hint_header() -> String:
-	return "LMB water  RMB erase\\nSPC pause  T step  X clear  G debug  K tests  F1-F8 demos\\n"
+	return "LMB water  RMB erase\\nSPC pause  T step  X clear  G debug  K tests  F1-F11 demos\\n"
 
 ## Reduce one floor row of the F1-family basin to a partial pattern: replace the fused 4/4 stone with bits, the membership invariant clearing the vacated cells (the survivors stay frozen).
 func _reduce_row(s: Array, row: int, bits: int) -> void:
@@ -191,6 +208,82 @@ func run_tests() -> void:
 				return "basin tile %d holds %d, want 200 -- the water did not pass through" % [dx, _tile_water.call(s, dx, 3)]
 		return ""
 
+	var check_tub := func(s: Array) -> String:
+		var pk: TilePacket = s[0].packet
+		var o: Vector2i = s[2]
+		var left := 0
+		var right := 0
+		for row in 2:
+			left += pk.get_pool(pk.idx(o.x, o.y + row), TilePacket.Mat.WATER)
+			right += pk.get_pool(pk.idx(o.x + 1, o.y + row), TilePacket.Mat.WATER)
+			right += pk.get_pool(pk.idx(o.x + 2, o.y + row), TilePacket.Mat.WATER)
+		if left != 510:
+			return "the left side drifted to %d -- the tub leveled through the wall" % left
+		if right != 256:
+			return "the right side drifted to %d -- the tub leveled through the wall" % right
+		var lb: int = s[1].labels.body_at(pk.idx(o.x, o.y + 1))
+		var rb: int = s[1].labels.body_at(pk.idx(o.x + 2, o.y + 1))
+		var wb: int = s[1].labels.body_at(pk.idx(o.x + 1, o.y + 1))
+		if lb == rb:
+			return "the two sides read as one body -- body detection crossed the wall"
+		if wb != rb:
+			return "the dam's water does not belong to its feeding side"
+		return ""
+
+	var check_cross_wall := func(s: Array) -> String:
+		var pk: TilePacket = s[0].packet
+		var o: Vector2i = s[2]
+		var left := 0
+		var right := 0
+		for row in 2:
+			left += pk.get_pool(pk.idx(o.x, o.y + row), TilePacket.Mat.WATER)
+			left += pk.get_pool(pk.idx(o.x + 1, o.y + row), TilePacket.Mat.WATER)
+			right += pk.get_pool(pk.idx(o.x + 2, o.y + row), TilePacket.Mat.WATER)
+			right += pk.get_pool(pk.idx(o.x + 3, o.y + row), TilePacket.Mat.WATER)
+		if left != 510:
+			return "the left side drifted to %d -- the tub leveled through the cross-boundary wall" % left
+		if right != 256:
+			return "the right side drifted to %d -- the tub leveled through the cross-boundary wall" % right
+		var lb: int = s[1].labels.body_at(pk.idx(o.x, o.y + 1))
+		var rb: int = s[1].labels.body_at(pk.idx(o.x + 3, o.y + 1))
+		if lb == rb:
+			return "the two sides read as one body -- body detection crossed the wall"
+		if s[1].labels.body_at(pk.idx(o.x + 1, o.y + 1)) != lb:
+			return "the left wall tile does not belong to the left body"
+		if s[1].labels.body_at(pk.idx(o.x + 2, o.y + 1)) != rb:
+			return "the right wall tile does not belong to the right body"
+		return ""
+
+	var check_pinched_tub := func(s: Array) -> String:
+		var pk: TilePacket = s[0].packet
+		var o: Vector2i = s[2]
+		var left := 0
+		var right := 0
+		for row in 2:
+			left += pk.get_pool(pk.idx(o.x, o.y + row), TilePacket.Mat.WATER)
+			right += pk.get_pool(pk.idx(o.x + 2, o.y + row), TilePacket.Mat.WATER)
+		if absi(left - right) <= 100:
+			return "columns converged to %d vs %d -- the tub leveled through the pinched wall" % [left, right]
+		var lb: int = s[1].labels.body_at(pk.idx(o.x, o.y + 1))
+		var rb: int = s[1].labels.body_at(pk.idx(o.x + 2, o.y + 1))
+		var wb: int = s[1].labels.body_at(pk.idx(o.x + 1, o.y + 1))
+		if lb == rb:
+			return "the two sides read as one body -- bodies bridged the pinched tile"
+		if wb == lb or wb == rb:
+			return "the pinched tile's water joined a side -- it bridges no body"
+		return ""
+
+	var check_pinched_air := func(s: Array) -> String:
+		var pk: TilePacket = s[0].packet
+		var o: Vector2i = s[2]
+		var la: int = s[1].labels.region_at(pk.idx(o.x + 1, o.y + 2))
+		var rb2: int = s[1].labels.region_at(pk.idx(o.x + 3, o.y + 2))
+		if la == rb2:
+			return "the chambers read as one pocket -- air bridged the pinched tile"
+		if not s[1].is_air_sealed(o.x + 1, o.y + 2) or not s[1].is_air_sealed(o.x + 3, o.y + 2):
+			return "a chamber reads vented -- escape crossed the pinched tile"
+		return ""
+
 	var check_pinch_interior := func(s: Array) -> String:
 		var pk: TilePacket = s[0].packet
 		var o: Vector2i = s[2]
@@ -233,3 +326,27 @@ func run_tests() -> void:
 		var pk: TilePacket = s[0].packet
 		var o: Vector2i = s[2]
 		pk.set_sub(pk.idx(o.x + 1, o.y + 1), TilePacket.K_STONE, GridSand.TL | GridSand.BR))
+	_run_example("OC8 a full-height one-subtile wall never levels the tub", PRESETS[KEY_F9], check_tub, func(s: Array) -> void:
+		var pk: TilePacket = s[0].packet
+		var o: Vector2i = s[2]
+		for row in 2:
+			pk.set_sub(pk.idx(o.x + 1, o.y + row), TilePacket.K_STONE, GridSand.TL | GridSand.BL)
+			pk.set_pool(pk.idx(o.x + 2, o.y + row), TilePacket.Mat.WATER, 128))
+	_run_example("OC9 a cross-boundary wall never levels the tub", PRESETS[KEY_F10], check_cross_wall, func(s: Array) -> void:
+		var pk: TilePacket = s[0].packet
+		var o: Vector2i = s[2]
+		for row in 2:
+			pk.set_sub(pk.idx(o.x + 1, o.y + row), TilePacket.K_STONE, GridSand.TR)
+			pk.set_sub(pk.idx(o.x + 2, o.y + row), TilePacket.K_STONE, GridSand.BL)
+			pk.set_pool(pk.idx(o.x + 3, o.y + row), TilePacket.Mat.WATER, 128))
+	_run_example("OC10 a pinched wall never levels the tub", PRESETS[KEY_F9], check_pinched_tub, func(s: Array) -> void:
+		var pk: TilePacket = s[0].packet
+		var o: Vector2i = s[2]
+		for row in 2:
+			pk.set_sub(pk.idx(o.x + 1, o.y + row), TilePacket.K_STONE, GridSand.TL | GridSand.BR)
+			pk.set_pool(pk.idx(o.x + 2, o.y + row), TilePacket.Mat.WATER, 128))
+	_run_example("OC11 a pinched wall never bridges air chambers", PRESETS[KEY_F11], check_pinched_air, func(s: Array) -> void:
+		var pk: TilePacket = s[0].packet
+		var o: Vector2i = s[2]
+		for row in 3:
+			pk.set_sub(pk.idx(o.x + 2, o.y + 1 + row), TilePacket.K_STONE, GridSand.TL | GridSand.BR))

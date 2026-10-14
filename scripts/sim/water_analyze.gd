@@ -80,16 +80,19 @@ func _flood_body(start: int) -> void:
 		var i: int = stack[stack.size() - 1]
 		stack.resize(stack.size() - 1)
 		var x := i % width
-		if x > 0 and pk.pool_total(i - 1) >= GridWater.LINE and _body_of[i - 1] == -1:
+		@warning_ignore("integer_division")
+		var y := i / width
+		# a body connects only where liquid can flow -- each join reads its edge and the neighbor's interior (world §3)
+		if x > 0 and stone.interior_bridges(x - 1, y) and stone.edge_h_open(x, y) and pk.pool_total(i - 1) >= GridWater.LINE and _body_of[i - 1] == -1:
 			_body_of[i - 1] = id
 			stack.push_back(i - 1)
-		if x < width - 1 and pk.pool_total(i + 1) >= GridWater.LINE and _body_of[i + 1] == -1:
+		if x < width - 1 and stone.interior_bridges(x + 1, y) and stone.edge_h_open(x + 1, y) and pk.pool_total(i + 1) >= GridWater.LINE and _body_of[i + 1] == -1:
 			_body_of[i + 1] = id
 			stack.push_back(i + 1)
-		if i >= width and pk.pool_total(i - width) >= GridWater.LINE and _body_of[i - width] == -1:
+		if i >= width and stone.interior_bridges(x, y - 1) and stone.edge_v_open(x, y) and pk.pool_total(i - width) >= GridWater.LINE and _body_of[i - width] == -1:
 			_body_of[i - width] = id
 			stack.push_back(i - width)
-		if i + width < width * height and pk.pool_total(i + width) >= GridWater.LINE and _body_of[i + width] == -1:
+		if i + width < width * height and stone.interior_bridges(x, y + 1) and stone.edge_v_open(x, y + 1) and pk.pool_total(i + width) >= GridWater.LINE and _body_of[i + width] == -1:
 			_body_of[i + width] = id
 			stack.push_back(i + width)
 
@@ -105,16 +108,19 @@ func _flood_region(start: int) -> void:
 		stack.resize(stack.size() - 1)
 		cells.push_back(i)
 		var x := i % width
-		if x > 0 and _is_air_idx(i - 1) and _region_of[i - 1] == -1:
+		@warning_ignore("integer_division")
+		var y := i / width
+		# a pocket connects only where air can pass -- each join reads its edge and the neighbor's interior (world §3)
+		if x > 0 and stone.interior_bridges(x - 1, y) and stone.edge_h_open(x, y) and _is_air_idx(i - 1) and _region_of[i - 1] == -1:
 			_region_of[i - 1] = id
 			stack.push_back(i - 1)
-		if x < width - 1 and _is_air_idx(i + 1) and _region_of[i + 1] == -1:
+		if x < width - 1 and stone.interior_bridges(x + 1, y) and stone.edge_h_open(x + 1, y) and _is_air_idx(i + 1) and _region_of[i + 1] == -1:
 			_region_of[i + 1] = id
 			stack.push_back(i + 1)
-		if i >= width and _is_air_idx(i - width) and _region_of[i - width] == -1:
+		if i >= width and stone.interior_bridges(x, y - 1) and stone.edge_v_open(x, y) and _is_air_idx(i - width) and _region_of[i - width] == -1:
 			_region_of[i - width] = id
 			stack.push_back(i - width)
-		if i + width < width * height and _is_air_idx(i + width) and _region_of[i + width] == -1:
+		if i + width < width * height and stone.interior_bridges(x, y + 1) and stone.edge_v_open(x, y + 1) and _is_air_idx(i + width) and _region_of[i + width] == -1:
 			_region_of[i + width] = id
 			stack.push_back(i + width)
 	@warning_ignore("shadowed_variable")
@@ -153,8 +159,8 @@ func _compute_escape() -> void:
 		for y in height:
 			for x in width:
 				var i := pk.idx(x, y)
-				if _escape[i] or stone.is_solid(x, y):
-					continue
+				if _escape[i] or stone.is_solid(x, y) or not stone.interior_bridges(x, y):
+					continue   # solid never vents; a pinched tile's air is sealed by its own matter (world §3)
 				var ok := y == 0 or (pk.get_debug(i) == TilePacket.DebugTile.OPEN_AIR and pk.pool_total(i) <= GridWater.AIR_PASSABLE_MAX)  # open sky, or a breathing open-air tile (a drowned vent stops venting)+
 				if not ok and _escape[i - width] and stone.edge_v_open(x, y):
 					ok = true  # rise through air, or bubble up through liquid

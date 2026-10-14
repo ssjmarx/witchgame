@@ -80,6 +80,10 @@ func drains_h(x: int, y: int) -> bool:
 		return false
 	return not TilePacket.BLOCKS_H[packet.occlusion_bits(idx(x, y))]
 
+## Does the tile's interior connect any two faces -- an open row or column? A pinched tile (its open cells never connect) bridges nothing: no run, body, pocket, or vent chains through it (world §3). Fixtures and the boundary never bridge.
+func interior_bridges(x: int, y: int) -> bool:
+	return drains_v(x, y) or drains_h(x, y)
+
 ## Is corner cell c of (x, y) reachable through the tile's interior? The cell must be open and share a fully open row or column with a partner -- a diagonal pair's open cells never connect, so its corners are unreachable (world §3). Fixtures never reach.
 func _corner_reachable(x: int, y: int, c: int) -> bool:
 	if not in_bounds(x, y) or packet.get_terrain(idx(x, y)) != TilePacket.T.AIR:

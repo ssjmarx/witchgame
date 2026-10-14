@@ -8,12 +8,13 @@ extends RefCounted
 const TILE := 16  # pixels per tile
 const FALL_MIN := 16    # <tune> — downflow arrivals before a tile renders as falling (one line's worth)
 const SUB_QUADS: Array = [[GridSand.TL, 0, 0], [GridSand.TR, 8, 0], [GridSand.BL, 0, 8], [GridSand.BR, 8, 8]]
-const GAS_DRAW: Array[int] = [TilePacket.Mat.SMOKE, TilePacket.Mat.STEAM]   # density order; the band split walks it reversed -- the lightest gas takes the topmost rows
 const BOTTOM_MASK := GridSand.BL | GridSand.BR  # the two lower subtile slots
 const TOP_MASK := GridSand.TL | GridSand.TR      # the two upper subtile slots
 const EDGE_X: Array[int] = [0, 1, 0, -1]   # the four edges of a subtile cell: top, right, bottom, left -- the neighbor cell across each
 const EDGE_Y: Array[int] = [-1, 0, 1, 0]
 const EDGE_R: Array = [[0, 0, 8, 1], [7, 0, 1, 8], [0, 7, 8, 1], [0, 0, 1, 8]]   # each edge's pixel rect within the cell
+const EDGE_NAME: Array[String] = ["t", "r", "b", "l"]
+const TileAtlas = preload("res://scripts/render/tile_atlas.gd")
 
 # the sim state this renderer draws
 var stone: GridStone
@@ -24,6 +25,8 @@ var liquids: Liquids
 
 var _base: Image
 var _frame_ms := 0
+var _atlases := {}   # kind name -> bank-colored atlas Image (the baked PNGs)
+var _roles := {}     # kind name -> role name -> atlas rect, resolved once at build
 
 # the picture: one map-sized image pushed through a texture
 var image: Image
@@ -44,6 +47,54 @@ func _init(terrain: GridStone, field: GridWater, p_seed := 0) -> void:
 	texture = ImageTexture.create_from_image(image)
 	liquids = Liquids.new(terrain, field)
 	_base = Image.create(terrain.width * TILE, terrain.height * TILE, false, Image.FORMAT_RGBA8)
+	_atlases = TileAtlas.new().load_atlases()
+	_resolve_roles()
+
+## Resolve every blitted role's atlas rect once -- string mashing never rides the frame loop.
+func _resolve_roles() -> void:
+	var steps := ["25", "50", "75", "full"]
+	for kind in ["stone", "wood"]:
+		var r := {}
+		r["fill"] = TileAtlas.LAYOUT["%s_fill" % kind]
+		for e in EDGE_NAME:
+			r["lip_" + e] = TileAtlas.LAYOUT["%s_lip_%s" % [kind, e]]
+			r["seam_" + e] = TileAtlas.LAYOUT["%s_seam_%s" % [kind, e]]
+		_roles[kind] = r
+	var sr := {}
+	sr["fill"] = TileAtlas.LAYOUT["soil_fill"]
+	sr["lip_t"] = TileAtlas.LAYOUT["soil_lip_t"]
+	for d in 4:
+		sr["damp_%d" % (d + 1)] = TileAtlas.LAYOUT["soil_damp_%s" % steps[d]]
+	_roles["soil"] = sr
+	for gas in ["smoke", "steam"]:
+		var gr := {}
+		for d in 4:
+			gr["d_%d" % (d + 1)] = TileAtlas.LAYOUT["%s_%s" % [gas, steps[d]]]
+		_roles[gas] = gr
+	var fr := {}
+	for f in 3:
+		fr["ember_%d" % f] = TileAtlas.LAYOUT["fire_ember_%d" % f]
+		fr["lick_%d" % f] = TileAtlas.LAYOUT["fire_lick_%d" % f]
+	_roles["fire"] = fr
+
+## Blit one atlas role onto the map at pixel (dx, dy) -- the atlas rect carries the tile or strip size.
+func _blit(kind: String, role: String, dx: int, dy: int) -> void:
+	var img: Image = _atlases.get(kind)
+	if img == null:
+		return
+	image.blit_rect(img, _roles[kind][role], Vector2i(dx, dy))
+
+## Quarter-step density for a 0-8 row fill: 0 none, then 1-4 by twos.
+func _density(fill: int) -> int:
+	if fill <= 0:
+		return 0
+	if fill <= 2:
+		return 1
+	if fill <= 4:
+		return 2
+	if fill <= 6:
+		return 3
+	return 4
 
 ## Repaint the tick base and recapture the desires: ambiance and solid terrain only. The dynamic layers paint per frame over a copy of this. Call on every state change -- tick, stroke, restore, overlay toggle.
 func redraw() -> void:
@@ -84,7 +135,7 @@ func frame() -> void:
 		_draw_cursor()
 	texture.update(image)
 
-## Paint one tile's matter with the seam rule: each matter subtile fills with its bank, and every edge reads its neighbor -- lit lips on exposure, dark seams against loose or foreign matter, and silence between two members (orthogonally adjacent members are one structure, world §3).
+## Paint one tile's matter with the seam rule: each matter subtile blits its fill, and every edge reads its neighbor -- lit lips on exposure, dark seams against loose or foreign matter, and silence between two members (orthogonally adjacent members are one structure, world §3).
 func _draw_terrain(x: int, y: int) -> void:
 	var i := stone.idx(x, y)
 	var s := stone.packet.struct_s[i]
@@ -93,32 +144,30 @@ func _draw_terrain(x: int, y: int) -> void:
 	for c in 4:
 		var bit := 1 << c
 		if (sn & bit) != 0:
-			_cell_face(x, y, c, Palette.BANK_STONE, (s & bit) != 0)
+			_cell_face(x, y, c, "stone", (s & bit) != 0)
 		elif (wn & bit) != 0:
-			_cell_face(x, y, c, Palette.BANK_WOOD, (s & bit) != 0)
+			_cell_face(x, y, c, "wood", (s & bit) != 0)
 
-## One matter cell: the fill, then each of its four edges -- lip on exposure, seam against matter that is not this structure, silence between two members.
-func _cell_face(x: int, y: int, c: int, bank: Array, member: bool) -> void:
+## One matter cell: the fill blit, then each of its four edges -- lip on exposure, seam against matter that is not this structure, silence between two members.
+func _cell_face(x: int, y: int, c: int, kind: String, member: bool) -> void:
 	var qx := x * TILE + (c & 1) * 8
 	var qy := y * TILE + (1 - (c >> 1)) * 8
-	image.fill_rect(Rect2i(qx, qy, 8, 8), bank[1])
+	_blit(kind, "fill", qx, qy)
 	for e in 4:
 		var nx: int = x * 2 + (c & 1) + EDGE_X[e]
 		var ny: int = y * 2 + (1 - (c >> 1)) + EDGE_Y[e]
-		var rect := Rect2i(qx + EDGE_R[e][0], qy + EDGE_R[e][1], EDGE_R[e][2], EDGE_R[e][3])
-		var oob := nx < 0 or ny < 0 or nx >= stone.width * 2 or ny >= stone.height * 2
-		if oob:
-			image.fill_rect(rect, bank[2])   # the map edge: an exposed face
+		if nx < 0 or ny < 0 or nx >= stone.width * 2 or ny >= stone.height * 2:
+			_blit(kind, "lip_" + EDGE_NAME[e], qx + EDGE_R[e][0], qy + EDGE_R[e][1])   # the map edge: an exposed face
 			continue
 		var ni := (ny >> 1) * stone.width + (nx >> 1)
 		var nbit := 1 << ((1 - (ny & 1)) * 2 + (nx & 1))
 		var nmat: int = (stone.packet.get_sub(ni, TilePacket.K_STONE) | stone.packet.get_sub(ni, TilePacket.K_WOOD)) & nbit
 		if nmat == 0:
-			image.fill_rect(rect, bank[2])   # exposed: the lit lip
+			_blit(kind, "lip_" + EDGE_NAME[e], qx + EDGE_R[e][0], qy + EDGE_R[e][1])   # exposed: the lit lip
 		elif member and (stone.packet.struct_s[ni] & nbit) != 0:
 			pass   # two members, orthogonally adjacent: one structure, no line
 		else:
-			image.fill_rect(rect, bank[0])   # the seam: loose against structure, or structure against structure
+			_blit(kind, "seam_" + EDGE_NAME[e], qx + EDGE_R[e][0], qy + EDGE_R[e][1])   # the seam: loose against structure, or structure against structure
 
 ## Overlay air pockets, per-segment level lines, and the tile grid (G).
 func _draw_debug() -> void:
@@ -197,7 +246,7 @@ func _draw_cursor_sub() -> void:
 	image.fill_rect(Rect2i(px, py, 1, 8), Palette.DEBUG_CURSOR)
 	image.fill_rect(Rect2i(px + 7, py, 1, 8), Palette.DEBUG_CURSOR)
 
-## Loose soil: one 8x8 quad per set nibble bit, light lip on subtiles with no soil directly above, damp darkening from the top of the occupied region (8 damp per pixel line -- the creeping front).
+## Loose soil: one fill blit per set nibble bit, light lip where uncovered above, damp quantized to subtile bands from the top of the occupied region -- full bands then a quarter-step boundary (the tileset lab's coarsened creep front).
 func _draw_soil(x: int, y: int, px: int, py: int, n: int) -> void:
 	var n_up := 0
 	if y > 0:
@@ -205,7 +254,7 @@ func _draw_soil(x: int, y: int, px: int, py: int, n: int) -> void:
 	for c in SUB_QUADS:
 		if (n & c[0]) == 0:
 			continue
-		image.fill_rect(Rect2i(px + c[1], py + c[2], 8, 8), Palette.BANK_SOIL[1])
+		_blit("soil", "fill", px + c[1], py + c[2])
 		var covered := false
 		if c[0] == GridSand.BL:
 			covered = (n & GridSand.TL) != 0
@@ -215,59 +264,52 @@ func _draw_soil(x: int, y: int, px: int, py: int, n: int) -> void:
 			var want := GridSand.BL if c[0] == GridSand.TL else GridSand.BR
 			covered = (n_up & want) != 0
 		if not covered:
-			image.fill_rect(Rect2i(px + c[1], py + c[2], 8, 1), Palette.BANK_SOIL[2])
+			_blit("soil", "lip_t", px + c[1], py + c[2])
 	var d := stone.packet.get_damp(stone.idx(x, y))
-	if d > 0:
-		# lines from the top of the occupied region: a bottom-only tile darkens from its own top, so shallow stacks still show a level
-		var band_top := py if (n & TOP_MASK) != 0 else py + 8
-		var band_bot := band_top + (d >> 3)
+	if d <= 0:
+		return
+	var band_top := py if (n & TOP_MASK) != 0 else py + 8
+	var rows := d >> 3
+	for k in range((rows >> 3) + 1):
+		var fill := 8 if (k + 1) * 8 <= rows else rows - k * 8
+		var dens := _density(fill)
+		if dens <= 0:
+			break
+		var ry := band_top + k * 8
 		for c in SUB_QUADS:
-			if (n & c[0]) == 0:
-				continue
-			var y0 := maxi(py + c[2], band_top)
-			var y1 := mini(py + c[2] + 8, band_bot)
-			if y1 > y0:
-				image.fill_rect(Rect2i(px + c[1], y0, 8, y1 - y0), Palette.BANK_SOIL[0])
+			if (n & c[0]) != 0 and ry >= py + c[2] and ry < py + c[2] + 8:
+				_blit("soil", "damp_%d" % dens, px + c[1], ry)
 
 ## Bind the solid field for its flow export; scenes without one skip the arrows.
 func bind_sand(p_sand: GridSand) -> void:
 	sand = p_sand
 
-## Gases draw top-down, eight units per line: checker dither from the tile's top to a full tile at 128, then one solid line per further eight (ceil) until the tile reads fully solid at 255 -- half liquid density, sub-eight films draw nothing. Amount and ratio are separate reads: the row count comes from the tile's TOTAL gas, and the rows split across the gases by share, lightest band on top (the liquid stack partition, mirrored).
+## Gases draw top-down, quantized to 8px subtile bands: smoke's band from the tile's top, steam's below it, and a boundary subtile where the two complementary dither phases mix by their fractional shares -- no blending, the DMG way. Row count from the tile's total gas, split by share; sub-eight films draw nothing.
 func _draw_gas(x: int, y: int, px: int, py: int) -> void:
 	var i := stone.idx(x, y)
-	var total := 0
-	for k in GAS_DRAW.size():
-		total += stone.packet.get_pool(i, GAS_DRAW[k])
+	var smoke := stone.packet.get_pool(i, TilePacket.Mat.SMOKE)
+	var steam := stone.packet.get_pool(i, TilePacket.Mat.STEAM)
+	var total := smoke + steam
 	if total < 8:
 		return
-	var rows_total := mini(total >> 3, TILE)
-	var solid := clampi((total - 121) >> 3, 0, TILE)
-	var deficit := rows_total
-	for k in GAS_DRAW.size():
-		@warning_ignore("integer_division")
-		deficit -= rows_total * stone.packet.get_pool(i, GAS_DRAW[k]) / total
-	var rcur := 0
-	for k in range(GAS_DRAW.size() - 1, -1, -1):   # lightest first: its band starts at the tile's top
-		var m: int = GAS_DRAW[k]
-		var units := stone.packet.get_pool(i, m)
-		if units == 0:
-			continue
-		@warning_ignore("integer_division")
-		var rm := rows_total * units / total
-		if rcur == 0:
-			rm += deficit   # the lightest absorbs the partition remainder -- the densest's job in _draw_water, mirrored
-		var col: Color = Palette.MAT_FILL[m]
-		var solid_h := mini(rm, maxi(0, solid - rcur))
-		if solid_h > 0:
-			image.fill_rect(Rect2i(px, py + rcur, TILE, solid_h), col)
-		for r in range(rcur + solid_h, rcur + rm):
-			var off := r & 1
-			for xx in range(off, TILE, 2):
-				image.set_pixel(px + xx, py + r, col)
-		rcur += rm
+	var rows := mini(total >> 3, TILE)
+	@warning_ignore("integer_division")
+	var smoke_rows := rows * smoke / total
+	for s in 2:
+		var top8 := s * 8
+		var so: int = clampi(smoke_rows - top8, 0, 8)
+		var se: int = clampi(rows - maxi(smoke_rows, top8), 0, 8)
+		if so + se == 0:
+			break
+		# the pool is tile-granular: each band spans both subtile columns, the 8px dither repeating -- the intended coarsening
+		if so > 0:
+			_blit("smoke", "d_%d" % _density(so), px, py + top8)
+			_blit("smoke", "d_%d" % _density(so), px + 8, py + top8)
+		if se > 0:
+			_blit("steam", "d_%d" % _density(se), px, py + top8)
+			_blit("steam", "d_%d" % _density(se), px + 8, py + top8)
 
-## Fire bits draw as 8x8 ember quads on the fuel tile plus dancing licks -- one per bit, in the bottom subtile row of the non-solid tile above, hash-keyed on (tile, tick, bit) so every flame tongues on its own phase; never the sim PRNG (world §1). The lick is pure render: flame is picture, air is rules.
+## Fire bits draw as ember tiles on the fuel cell plus licks -- one per bit, in the bottom subtile row of the non-solid tile above, hash-keyed on (tile, tick, bit) so every flame tongues on its own phase; never the sim PRNG (world §1). The lick is pure render: flame is picture, air is rules.
 func _draw_fire(x: int, y: int, px: int, py: int) -> void:
 	var f := stone.packet.get_fire(stone.idx(x, y))
 	if f == 0:
@@ -281,14 +323,9 @@ func _draw_fire(x: int, y: int, px: int, py: int) -> void:
 		var hsh := (x * 92837111 + y * 689287499 + water.tick_count * 283923481 + b * 40503) & 0x7FFFFFFF
 		@warning_ignore("shadowed_variable")
 		var frame := hsh % 3
-		var col := Palette.BANK_FIRE[1] if frame == 0 else (Palette.BANK_FIRE[2] if frame == 1 else Palette.BANK_FIRE[3])
-		image.fill_rect(Rect2i(px + c[1], py + c[2], 8, 8), col)
+		_blit("fire", "ember_%d" % frame, px + c[1], py + c[2])
 		if lick_ok:
-			var tx: int = px + c[1] + 2 + ((hsh >> 8) % 4)
-			var th := 5 + ((hsh >> 16) % 4)
-			image.fill_rect(Rect2i(px + c[1], lick_y, 8, 8), Palette.BANK_FIRE[1])
-			image.fill_rect(Rect2i(tx, lick_y + 8 - th, 2, th), Palette.BANK_FIRE[2])
-			image.set_pixel(tx, lick_y + 8 - th, Palette.BANK_FIRE[3])
+			_blit("fire", "lick_%d" % frame, px + c[1], lick_y)
 		b += 1
 
 ## Debug furniture glyphs: source spout, drain grate, steam vent, and the open-air brackets -- author furniture, drawn over everything, never part of the world picture (finished rooms keep furniture outside the play area).

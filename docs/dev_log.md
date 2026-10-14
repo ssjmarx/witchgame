@@ -7,6 +7,83 @@ everything historical lives here. Newest entries first.*
 
 ---
 
+## The pinched-tile bridge cut (2026-10, the user's air-pocket report follow-up)
+
+Air chambers split by a pinched (TL+BR) wall read as one pocket, and the same hole
+let seek runs, bodies, and escape chain through pinched tiles -- the air-side twin of
+the corner-reachability fix, which had closed only the pour. The generalized ruling:
+**a pinched tile bridges nothing** -- `interior_bridges` (an open row or column,
+`drains_v or drains_h`; fixtures and the boundary never bridge) gates four consumers:
+run extension in `pass_all`, the body and pocket flood joins, and escape marking (a
+pinched tile's air is never vented). OC10 (the tub through a pinched wall: columns
+diverge, the pinched tile's water joins no side's body) and OC11 (air chambers:
+different regions, both sealed) pin it; the probe also confirmed the S1 split-wall
+and partial-ceiling scenes were already correct.
+
+---
+
+## The connectivity port: runs, bodies, pockets split at sealed edges (2026-10, the user's tub report)
+
+Water leveled a tub across a full-height one-subtile wall (TL+BL) and across a
+cross-boundary diagonal (TR over BL). The movement rules were already correct -- creep
+reads edge + interior, so each side saturates the wall's open face and stops -- but the
+CONDUIT abstractions didn't: `pass_all`'s runs joined any contiguous pool_total >= LINE
+tiles (so seek teleported volume across the wall once it held water), and
+`_flood_body`/`_flood_region` connected bodies and pockets the same way. The user's
+ruling, now law: **a body can't be connected across a tile the liquid could not flow
+through.** Fix: three edge gates -- run extension reads `edge_h_open`, and both floods'
+joins read their directional edge. OC8 (the tub: sides keep their totals, the dam's
+water belongs to its feeding body) and OC9 (the cross-boundary wall, same) pin it; the
+prior suites are untouched (plain water/air edges are always open).
+
+---
+
+## The tileset lab, stage two: the atlas + matter, gas, fire (2026-10)
+
+The 8×8 tile atlas ships and the renderer's matter, soil, gas, and fire passes blit
+from baked PNGs. Liquids and ambiance stay procedural until their own stages.
+
+**Rulings and shape:**
+
+- **One layout, many banks**: `tile_atlas.gd` holds the single `LAYOUT` (40 roles:
+  fills, lip/seam strips, dither ramps, embers, licks) shared by the baker
+  (placement) and the renderer (blits); the gray atlas (`assets/gray/tiles.png`)
+  is painted by slot-index painters and is the hand-editable truth; six bakes color
+  it per bank. A slot past a short bank clamps brightward — the shared layout's
+  foreign roles, never read by the renderer.
+- **The renderer keeps its one-Image composite** — atlas blits replace per-pixel
+  fills; scenes and layering unchanged. The seam rule survives verbatim as neighbor
+  queries choosing lip/seam/silence strips; the gas pass quantizes to subtile bands
+  (smoke-top, steam-below, complementary dither phases mixing at the boundary — no
+  alpha blending, the DMG way); soil damp quantizes to full bands plus a
+  quarter-step boundary; fire blits hash-keyed ember and lick tiles.
+- **Coarsenings accepted**: damp was a per-pixel gradient (now 4 quarter steps); the
+  gas band split was row-precise (now subtile); the lick lost its sub-pixel jitter
+  (the 3 baked variants carry the variety); wood's plank art went flat (texture
+  returns by hand in the gray atlas — the pipeline's point).
+
+**Three incidents, all caught by gates or probes:** a missing-layout-key abort
+mid-`_init` hung the first bake run headless (SceneTree never quits on abort —
+lesson: `-s` tools fail loudly or hang silently, so guard the lookups); the
+2-color banks crashed `color_image` on the 4-slot fire art (fixed by the clamp
+ruling); and the **stale-gray fossil** — the first crashed run had left a partial
+gray on disk that later runs faithfully re-colored (584 opaque pixels, `full` roles
+and licks empty), and **PT6's per-role population check caught it** — the
+invisible-witch lesson, now machine-enforced. Regen: 1126 opaque pixels, 40 roles,
+eight palette proofs green.
+
+**Proofs:** PT6 (every baked atlas pixel ∈ its bank; every role populated),
+PT7 (the gray source holds baseline levels only). Visual parity is the eyeball
+gate in the labs.
+
+**Post-script (the user's eyeball gate earned its keep twice):** the gas pass
+first blitted one 8×8 dither per band — half of every gas tile stayed empty,
+because the pool is tile-granular while the atlas is 8×8; fixed by spanning each
+band across both subtile columns (verified headlessly: 128/128 coverage on a full
+tile). Matter, soil, and fire were immune — subtile-granular passes.
+
+---
+
 ## The tileset lab, stage one: the bake pipeline (2026-10)
 
 The art pipeline ships: colorless baselines, bank-colored bakes, the palette as the

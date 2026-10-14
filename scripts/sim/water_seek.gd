@@ -26,14 +26,15 @@ func _init(w: int, h: int, terrain: GridStone, p_labels: WaterAnalyze, p_pools: 
 	pools = p_pools
 	flow = p_flow
 
-## Rule four: try to equalize pressure across each run of liquid tiles (any material — mixtures are one conduit) for material m.
+## Rule four: try to equalize pressure across each run of liquid tiles (any material — mixtures are one conduit) for material m. A run splits at a sealed edge or a pinched tile -- the conduit never spans matter the liquid could not flow through (world §3).
 func pass_all(m: int) -> void:
 	for y in range(height - 1, -1, -1):
 		var x := 0
 		while x < width:
 			if pk.pool_total(pk.idx(x, y)) >= GridWater.LINE:
 				var x1 := x
-				while x1 + 1 < width and pk.pool_total(pk.idx(x1 + 1, y)) >= GridWater.LINE:
+				while x1 + 1 < width and pk.pool_total(pk.idx(x1 + 1, y)) >= GridWater.LINE \
+						and stone.edge_h_open(x1 + 1, y) and stone.interior_bridges(x1 + 1, y):
 					x1 += 1
 				run(x, x1, y, m)
 				x = x1 + 1

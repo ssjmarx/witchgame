@@ -27,7 +27,7 @@ func baseline_image(src: Image, bank: Array) -> Array:
 		report.append("WARN: %d distinct colors against a %d-slot bank -- hand-edit the baseline" % [slots.size(), bank.size()])
 	return [img, report]
 
-## Colorize a baseline image with a bank: each pixel's gray level maps back to its slot's bank color, alpha preserved. Returns [image, unmapped] -- unmapped counts pixels whose gray is no baseline level (hand-edits to fix).
+## Colorize a baseline image with a bank: each pixel's gray level maps back to its slot's bank color, alpha preserved; a slot past a short bank clamps brightward (the shared layout's foreign roles -- the renderer never reads them). Returns [image, unmapped] -- unmapped counts pixels whose gray is no baseline level (hand-edits to fix).
 func color_image(src: Image, bank: Array) -> Array:
 	var img := Image.create(src.get_width(), src.get_height(), false, Image.FORMAT_RGBA8)
 	var unmapped := 0
@@ -40,7 +40,7 @@ func color_image(src: Image, bank: Array) -> Array:
 			if slot < 0:
 				unmapped += 1
 				continue
-			var b: Color = bank[slot]
+			var b: Color = bank[mini(slot, bank.size() - 1)]
 			b.a = c.a
 			img.set_pixel(x, y, b)
 	return [img, unmapped]

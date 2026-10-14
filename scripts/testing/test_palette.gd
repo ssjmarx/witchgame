@@ -16,6 +16,8 @@ func run_tests() -> void:
 	_example("PT3  banks sort dark to light -- index 0 is darkest", _pt3_luminance)
 	_example("PT4  the baseline quantizer maps used colors to bank slots", _pt4_baseline)
 	_example("PT5  the colorizer writes bank colors only", _pt5_colorize)
+	_example("PT6  every baked atlas draws from its bank alone", _pt6_atlas_files)
+	_example("PT7  the gray atlas holds levels only, every role populated", _pt7_gray_atlas)
 
 ## PT0: MASTER equals the canonical DB16 hex for hex -- a master change is a law change and fails here by design.
 func _pt0_master() -> String:
@@ -155,3 +157,47 @@ func _is_level(c: Color) -> bool:
 		if absi(c.r8 - lv.r8) <= 8 and absi(c.g8 - lv.g8) <= 8 and absi(c.b8 - lv.b8) <= 8:
 			return true
 	return false
+
+## PT6: the file gate -- every pixel of every baked atlas is its bank's color or transparent, and every role rect holds something opaque (the invisible-witch lesson: the artifact is gated, not just the math).
+func _pt6_atlas_files() -> String:
+	var TileAtlas = preload("res://scripts/render/tile_atlas.gd")
+	for kind in TileAtlas.FILES:
+		var img := Image.load_from_file(TileAtlas.FILES[kind])
+		if img == null or img.is_empty():
+			return "%s atlas missing -- run bake_tiles.gd and let the editor import" % kind
+		var bank: Array = TileAtlas.BANKS[kind]
+		for y in img.get_height():
+			for x in img.get_width():
+				var c := img.get_pixel(x, y)
+				if c.a8 == 0:
+					continue
+				if not bank.has(c):
+					return "%s atlas pixel (%d, %d) is %s, outside its bank" % [kind, x, y, c.to_html(false)]
+		for role in TileAtlas.LAYOUT:
+			var r: Rect2i = TileAtlas.LAYOUT[role]
+			var opaque := false
+			for y in range(r.position.y, r.position.y + r.size.y):
+				for x in range(r.position.x, r.position.x + r.size.x):
+					if img.get_pixel(x, y).a8 > 0:
+						opaque = true
+						break
+				if opaque:
+					break
+			if not opaque:
+				return "%s atlas role %s holds no opaque pixel" % [kind, role]
+	return ""
+
+## PT7: the gray source holds baseline levels (or transparency) only -- the hand-editable truth stays quantized.
+func _pt7_gray_atlas() -> String:
+	var TileAtlas = preload("res://scripts/render/tile_atlas.gd")
+	var img := Image.load_from_file("res://assets/gray/tiles.png")
+	if img == null or img.is_empty():
+		return "gray atlas missing -- run bake_tiles.gd"
+	for y in img.get_height():
+		for x in img.get_width():
+			var c := img.get_pixel(x, y)
+			if c.a8 == 0:
+				continue
+			if not _is_level(c):
+				return "gray pixel (%d, %d) is %s, no baseline level" % [x, y, c.to_html(false)]
+	return ""
