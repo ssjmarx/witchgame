@@ -101,7 +101,7 @@ func paint(x: int, y: int, px: int, py: int, blit: Callable) -> void:
 	var mag := water.get_flow_mag(x, y)
 	var can_fall := stone.drains_v(x, y) and stone.edge_v_open(x, y + 1)
 	var below := i + stone.width if y < stone.height - 1 else -1
-	var below_full := below >= 0 and not stone.is_solid(x, y + 1) and _liquid_total(below) >= 240
+	var below_full := below >= 0 and not stone.is_solid(x, y + 1) and _below_full(below)
 	var supported := not can_fall or below_full
 	var dir := water.get_flow_dir(x, y)
 	var rapid := _rapid(dir, mag)
@@ -278,8 +278,13 @@ func _raining_above(x: int, y: int, kind: String) -> int:
 		return 0   # a film pours no rain
 	if not (stone.drains_v(x, y - 1) and stone.edge_v_open(x, y)):
 		return 0   # the column above rests on something -- its rain already landed
-	var below_full := not stone.is_solid(x, y) and _liquid_total(a + stone.width) >= 240
+	var below_full := not stone.is_solid(x, y) and _below_full(a + stone.width)
 	return 0 if below_full else liq
+
+
+## The subtile-aware full read: the tile cannot accept one more LINE of liquid -- its pool total plus its solid subtiles' volume crosses the 240 line (so a stone, wood, or soil shelf raises the waterline's full mark with it) (world §9).
+func _below_full(b: int) -> bool:
+	return _liquid_total(b) + 64 * TilePacket.POPCOUNT[pk.occlusion_bits(b)] >= 240
 
 ## The kind for a draw: the dry-gap replay override while a banked picture plays out, else the live read.
 func _kind_now(i: int, liq: int) -> String:
