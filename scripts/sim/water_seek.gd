@@ -32,7 +32,8 @@ func pass_all(m: int) -> void:
 			if pk.pool_total(pk.idx(x, y)) >= GridWater.LINE:
 				var x1 := x
 				while x1 + 1 < width and pk.pool_total(pk.idx(x1 + 1, y)) >= GridWater.LINE \
-						and stone.edge_h_open(x1 + 1, y) and stone.interior_bridges(x1 + 1, y):
+						and stone.edge_h_open(x1 + 1, y) \
+						and (stone.drains_h(x1 + 1, y, 1) or stone.drains_h(x1 + 1, y, -1)):
 					x1 += 1
 				run(x, x1, y, m)
 				x = x1 + 1
@@ -115,7 +116,7 @@ func transfer_level(s: int, t: int, y: int, diff: int, ptops: PackedInt32Array, 
 		var e_p := pk.xy_of(entry)
 		if e_p.y > 0:
 			var above := pk.idx(t, e_p.y - 1)
-			if stone.drains_v(t, e_p.y) and stone.edge_v_open(t, e_p.y) and pk.pool_total(above) <= GridWater.AIR_PASSABLE_MAX:
+			if stone.drains_up(t, e_p.y) and stone.edge_v_open(t, e_p.y) and pk.pool_total(above) <= GridWater.AIR_PASSABLE_MAX:
 				var r2 := pk.pool_free(above)
 				if r2 > 0:
 					target = above

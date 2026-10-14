@@ -119,19 +119,13 @@ func _crest(img: Image, r: Rect2i, h: int, v: int) -> void:
 		if (x + v) % 4 < 2:
 			img.set_pixel(r.position.x + x, top, crest)
 
-## One rain tile: two column strips of 2px dashes, left strip then right -- light rains two dashes a strip, heavy four (a near-solid streak); the renderer scrolls them, the tile itself is static.
-func _rain(img: Image, r: Rect2i, heavy: bool) -> void:
+## One droplet sprite: 2x3, tip up -- the renderer blits it at clock-driven positions (light: one droplet descends tl->bl then one tr->br; heavy: two cross tl+br -> bl+tr; world §9).
+func _drop(img: Image, r: Rect2i) -> void:
 	var c: Color = Palette.BASELINE_LEVELS[2]
-	var count := 4 if heavy else 2
-	for col in 2:
-		var cx := r.position.x + 2 + col * 4
-		var dashes := count if col == 0 else maxi(count - 1, 2)
-		for k in dashes:
-			@warning_ignore("integer_division")
-			var ry := r.position.y + (k * 8) / maxi(dashes, 1)
-			img.fill_rect(Rect2i(cx, ry, 2, 2), c)
+	img.set_pixel(r.position.x, r.position.y, c)
+	img.fill_rect(Rect2i(r.position.x, r.position.y + 1, 2, 2), c)
 
-## Paint the four liquid kinds' roles: level tiles, crest pairs, rain variants.
+## Paint the four liquid kinds' roles: level tiles, crest pairs, the droplet sprite.
 func _paint_liquids(img: Image) -> void:
 	for kind in ["water", "oil", "acid", "lava"]:
 		for h in [2, 4, 6, 8]:
@@ -142,5 +136,4 @@ func _paint_liquids(img: Image) -> void:
 		_crest(img, TileAtlas.LAYOUT["%s_crest_4b" % kind], 4, 1)
 		_crest(img, TileAtlas.LAYOUT["%s_crest_6a" % kind], 6, 0)
 		_crest(img, TileAtlas.LAYOUT["%s_crest_6b" % kind], 6, 1)
-		_rain(img, TileAtlas.LAYOUT["%s_rain_light" % kind], false)
-		_rain(img, TileAtlas.LAYOUT["%s_rain_heavy" % kind], true)
+		_drop(img, TileAtlas.LAYOUT["%s_drop" % kind])

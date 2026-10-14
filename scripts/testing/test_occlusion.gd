@@ -62,6 +62,12 @@ const PRESETS := {
 		"wssw",
 		"ssss",
 	],
+	KEY_F11: [
+		"ws..",
+		"s...",
+		"....",
+		"....",
+	],
 }
 
 var sand: GridSand
@@ -105,7 +111,7 @@ func _load_preset(keycode: int) -> void:
 
 ## Controls listing for the occlusion sandbox.
 func _hint_header() -> String:
-	return "LMB water  RMB erase\\nSPC pause  T step  X clear  G debug  K tests  F1-F10 demos\\n"
+	return "LMB water  RMB erase\\nSPC pause  T step  X clear  G debug  K tests  F1-F11 demos\\n"
 
 ## Reduce one floor row of the F1-family basin to a partial pattern: replace the fused 4/4 stone with bits, the membership invariant clearing the vacated cells (the survivors stay frozen).
 func _reduce_row(s: Array, row: int, bits: int) -> void:
@@ -305,3 +311,25 @@ func run_tests() -> void:
 		for row in 2:
 			pk.set_sub(pk.idx(o.x + 1, o.y + row), TilePacket.K_STONE, GridSand.TL | GridSand.BR)
 			pk.set_pool(pk.idx(o.x + 2, o.y + row), TilePacket.Mat.WATER, 128))
+
+	var check_notch_drain := func(s: Array) -> String:
+		var pk: TilePacket = s[0].packet
+		var o: Vector2i = s[2]
+		var below := 0
+		for row in 2:
+			for dx in 4:
+				below += pk.get_pool(pk.idx(o.x + dx, o.y + 2 + row), TilePacket.Mat.WATER)
+		if below < 200:
+			return "the pool stayed above -- only %d of 255 reached the floor" % below
+		return ""
+
+	_run_example("OC14 a lone notch beside water drains through", PRESETS[KEY_F11], check_notch_drain, func(s: Array) -> void:
+		var pk: TilePacket = s[0].packet
+		var o: Vector2i = s[2]
+		pk.set_sub(pk.idx(o.x + 1, o.y), TilePacket.K_STONE, GridSand.TL | GridSand.TR | GridSand.BR)
+		pk.set_pool(pk.idx(o.x, o.y), TilePacket.Mat.WATER, 255))
+	_run_example("OC15 the boundary-gap control drains the same", PRESETS[KEY_F11], check_notch_drain, func(s: Array) -> void:
+		var pk: TilePacket = s[0].packet
+		var o: Vector2i = s[2]
+		pk.set_sub(pk.idx(o.x + 1, o.y), TilePacket.K_STONE, GridSand.TR)
+		pk.set_pool(pk.idx(o.x, o.y), TilePacket.Mat.WATER, 255))

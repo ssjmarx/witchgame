@@ -68,21 +68,60 @@ func edge_h_open(x: int, y: int) -> bool:
 		return false
 	return not TilePacket.BLOCKS_H[_face(x - 1, y, GridSand.TR | GridSand.BR) | _face(x, y, GridSand.TL | GridSand.BL)]
 
-## Interior test: may liquid inside (x, y) leave vertically? The tile's own pattern must leave an open through-column -- some left AND some right cell seals the interior path (world §3). Fixtures and the boundary never drain.
+## Interior test: may liquid inside (x, y) leave vertically (downward)? The tile's own pattern must leave an open through-column -- some left AND some right cell seals the interior path (world §3). The wetability clause: an open bottom exit cell whose row and column partners are solid still drains when liquid stands in the exterior tile beside it -- a lone notch entered from its side face drinks downward. Fixtures and the boundary never drain.
 func drains_v(x: int, y: int) -> bool:
+	return _drains_vertical(x, y, true)
+
+## Interior test: may matter inside (x, y) leave vertically upward (gas rise, the seek lift)? The through-column test, with the wetability clause on the TOP exit cells -- liquid or gas escapes a lone top notch it can stand beside.
+func drains_up(x: int, y: int) -> bool:
+	return _drains_vertical(x, y, false)
+
+## The shared vertical interior: the open-column test, then the wetability clause on the exit row (bottom when falling, top when rising) -- a blocked tile still passes through an open exit cell wetted from its exterior side (world §3).
+func _drains_vertical(x: int, y: int, down: bool) -> bool:
 	if not in_bounds(x, y) or packet.get_terrain(idx(x, y)) != TilePacket.T.AIR:
 		return false
-	return not TilePacket.BLOCKS_V[packet.occlusion_bits(idx(x, y))]
+	var p := packet.occlusion_bits(idx(x, y))
+	if not TilePacket.BLOCKS_V[p]:
+		return true
+	if down:
+		if (p & GridSand.BL) == 0 and _wet_side(x - 1, y, GridSand.BR):
+			return true
+		if (p & GridSand.BR) == 0 and _wet_side(x + 1, y, GridSand.BL):
+			return true
+	else:
+		if (p & GridSand.TL) == 0 and _wet_side(x - 1, y, GridSand.TR):
+			return true
+		if (p & GridSand.TR) == 0 and _wet_side(x + 1, y, GridSand.TL):
+			return true
+	return false
 
-## Interior test: may liquid inside (x, y) leave horizontally? An open through-row -- some top AND some bottom cell seals it (world §3). Fixtures and the boundary never drain.
-func drains_h(x: int, y: int) -> bool:
+## Interior test: may liquid inside (x, y) leave horizontally toward dx? An open through-row -- some top AND some bottom cell seals it (world §3). The wetability clause is directional: only the exit face's cells count (rightward reads TR/BR, leftward TL/BL), each wetted from the exterior tile past it (TR/TL from above, BR/BL from below). Fixtures and the boundary never drain.
+func drains_h(x: int, y: int, dx: int) -> bool:
 	if not in_bounds(x, y) or packet.get_terrain(idx(x, y)) != TilePacket.T.AIR:
 		return false
-	return not TilePacket.BLOCKS_H[packet.occlusion_bits(idx(x, y))]
+	var p := packet.occlusion_bits(idx(x, y))
+	if not TilePacket.BLOCKS_H[p]:
+		return true
+	if dx > 0:
+		if (p & GridSand.TR) == 0 and _wet_side(x, y - 1, GridSand.BR):
+			return true
+		if (p & GridSand.BR) == 0 and _wet_side(x, y + 1, GridSand.TR):
+			return true
+	else:
+		if (p & GridSand.TL) == 0 and _wet_side(x, y - 1, GridSand.BL):
+			return true
+		if (p & GridSand.BL) == 0 and _wet_side(x, y + 1, GridSand.TL):
+			return true
+	return false
 
-## Does the tile's interior connect any two faces -- an open row or column? A pinched tile (its open cells never connect) bridges nothing: no run, body, pocket, or vent chains through it (world §3). Fixtures and the boundary never bridge.
-func interior_bridges(x: int, y: int) -> bool:
-	return drains_v(x, y) or drains_h(x, y)
+## Does tile (x, y) hold liquid in cell `cell`? The wetability source: open matter at the cell and real liquid in the pool (gases wet nothing) -- OC7's dry column and OC2's solid neighbor stay sealed (world §3).
+func _wet_side(x: int, y: int, cell: int) -> bool:
+	if not in_bounds(x, y) or packet.get_terrain(idx(x, y)) != TilePacket.T.AIR:
+		return false
+	var i := idx(x, y)
+	if (packet.occlusion_bits(i) & cell) != 0:
+		return false
+	return packet.pool_total(i) - packet.get_pool(i, TilePacket.Mat.SMOKE) - packet.get_pool(i, TilePacket.Mat.STEAM) > 0
 
 ## Is corner cell c of (x, y) reachable through the tile's interior? The cell must be open and share a fully open row or column with a partner -- a diagonal pair's open cells never connect, so its corners are unreachable (world §3). Fixtures never reach.
 func _corner_reachable(x: int, y: int, c: int) -> bool:

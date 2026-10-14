@@ -9,6 +9,15 @@ everything historical lives here. Newest entries first.*
 
 ---
 
+## The wetability clause and the droplet rain (2026-10 -- post-2b nits)
+
+- **A lone notch beside water drains through** (the user's 3/4-tile report): a TL+TR+BR tile with BL open held water that crept in from the side, because `drains_v` demanded a full open column. The fix is the **wetability clause**: a blocked tile still drains through an open exit cell when the exterior tile beside it is open at that cell and holds real liquid -- the water can stand there, so it can fall from there. The wet source must hold liquid (gases wet nothing): that keeps OC7's pinched tile sealed (its BL faces a dry open column) and OC2's zigzag holding (its BL faces solid). Direction-aware (`drains_v` falls, new `drains_up` for gas rise and the seek lift -- a top-notch clause mirrors the bottom one); OC14/OC15 pin the report's scene and its tile-boundary control.
+- **Rain became droplets**: the two-band dash tiles read as static wallpaper. New art: one 2x3 droplet sprite (`drop` role); light rains one droplet descending tl->bl then one tr->br (8-frame cycle, 4px steps); heavy rains two crossing tl+br -> bl+tr (4 frames); four x-offsets cycle in order. The clock is global and decoupled from the sim -- the animation always completes, ending on the cell floor. Waterfall = fill + the heavy pair; rain-through uses the same positions, masked to open cells.
+- **Two operational lessons**: the bake tool only regenerates the gray atlas with `--regen` (a stale gray faithfully re-colored is the invisible-witch class of bug again), and headless runs load Godot's *import cache*, not the changed PNG -- run `Godot --headless --path . --import` after any re-bake before probing.
+- **Doc drift caught**: world.md's §3 liquids paragraph still carried the pre-cut air-gate law ("Air is gated, not simulated... escape flood"); rewritten to the sealed-air truth. The lesson: wide deletions need a doc grep for the retired vocabulary, not just the planned paragraph.
+
+---
+
 ## The sealed-air cut (2026-10 -- the foundation-shaker)
 
 **The ruling:** dynamic sealed air pockets are dropped. Air is nothing -- never

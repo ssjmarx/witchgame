@@ -46,7 +46,7 @@ func cell_pass(i: int, m: int, tick: int) -> void:
 	var visc := TilePacket.VISCOSITY[m]
 	var flip := -1 if (tick % 2 == 0) else 1
 	# 1) RISE — as much as the headroom above takes; the remainder is step two's business
-	if p.y > 0 and stone.drains_v(p.x, p.y) and stone.edge_v_open(p.x, p.y):
+	if p.y > 0 and stone.drains_up(p.x, p.y) and stone.edge_v_open(p.x, p.y):
 		var a := i - width
 		var free := pk.pool_free(a)
 		if free > 0:
@@ -65,7 +65,7 @@ func cell_pass(i: int, m: int, tick: int) -> void:
 			var nx := p.x + dx
 			if nx < 0 or nx >= width:
 				continue
-			if not stone.drains_h(p.x, p.y) or not stone.edge_h_open(maxi(p.x, nx), p.y):
+			if not stone.drains_h(p.x, p.y, nx - p.x) or not stone.edge_h_open(maxi(p.x, nx), p.y):
 				continue
 			var n := pk.idx(nx, p.y)
 			var ng := pk.get_pool(n, m)

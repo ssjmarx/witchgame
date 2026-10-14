@@ -233,10 +233,10 @@ func _cell_pass(i: int, m: int) -> void:
 				return
 
 	# 3) CREEP -- advance into dry space, both sides, half-difference capped by the target's free capacity and viscosity
-	if not stone.drains_h(p.x, p.y):
-		return   # spanning matter seals the interior path -- the liquid cannot reach a side face
 	for k in 2:
 		var dx := flip if k == 0 else -flip
+		if not stone.drains_h(p.x, p.y, dx):
+			continue   # spanning matter seals the interior path -- the liquid cannot reach that side face
 		var nx := p.x + dx
 		if nx < 0 or nx >= width:
 			continue

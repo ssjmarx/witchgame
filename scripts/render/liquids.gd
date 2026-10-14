@@ -1,6 +1,6 @@
 ## The liquid layer (world §9, tileset lab 2b): the state IS the picture -- paint reads
 ## the settled CA and flow export directly, snaps per tick; the pose model died. Level tiles,
-## synchronized crests, the two-band rain field, per-cell volume distribution, rain-through.
+## synchronized crests, the droplet rain field, per-cell volume distribution, rain-through.
 
 class_name Liquids
 extends RefCounted
@@ -58,7 +58,7 @@ func paint(x: int, y: int, px: int, py: int, blit: Callable) -> void:
 	# rain falls through to the waterline: the column above continues down this tile's open cells to the surface fill
 	var rain_a := _raining_above(x, y, kind)
 	if rain_a > 0:
-		_rain_through(blit, kind, pattern, rain_a >= 64, px, py)
+		_rain_through(x, y, blit, kind, pattern, rain_a >= 64, px, py)
 	# the waterfall read: a solid falling column or a pool mouth under strong downflow draws rain over its fill (world §9)
 	if waterfall_col or (water.get_flow_dir(x, y) == GridWater.FlowDir.DOWN and mag >= FLOW_STREAK):
 		_draw_rain(x, y, px, py, liq, mag, blit, pattern)
@@ -79,20 +79,32 @@ func _level_role(lines: int, surface: bool, crest_v: int) -> String:
 		return "crest_%d%s" % [q, "a" if crest_v == 0 else "b"]
 	return "lev_%d" % q
 
-## The rain field: two variants only -- light below 64 units, heavy above (the waterfall composite takes heavy) -- blitted across both subtile columns spanning the scroll seam; a fully-solid column draws no dashes; the dashes fall one cell every four ticks, the right strip one phase late so the columns stagger tl->bl then tr->br (world §9).
+## The rain field: droplets, not texture -- light rains one droplet descending tl->bl then one tr->br; heavy rains two crossing tl+br -> bl+tr; four x-offsets cycle in order. The clock is per-tile phase-hashed -- every tile runs the same cycle offset by its position (x*7 + y*13), so the field desyncs without state; the animation always completes, ending on the cell floor (world §9).
 func _draw_rain(x: int, y: int, px: int, py: int, liq: int, mag: int, blit: Callable, pattern: int) -> void:
 	var kind := KIND[_majority(stone.idx(x, y))]
 	if kind == "":
 		return
-	var role := "rain_heavy" if maxi(liq, mag) >= 64 else "rain_light"
-	var scroll_l := ((water.tick_count >> 2) & 1) * 8
-	var scroll_r := (((water.tick_count >> 2) + 1) & 1) * 8
-	if (pattern & (GridSand.TL | GridSand.BL)) == 0:
-		blit.call(kind, role, px, py + scroll_l - 8)
-		blit.call(kind, role, px, py + scroll_l)
-	if (pattern & (GridSand.TR | GridSand.BR)) == 0:
-		blit.call(kind, role, px + 8, py + scroll_r - 8)
-		blit.call(kind, role, px + 8, py + scroll_r)
+	for d in _droplet_positions(x, y, maxi(liq, mag) >= 64):
+		_drop_at(blit, kind, pattern, px + d[0], py + d[1])
+
+## The droplet positions for this tick as tile-local [x, y] pairs: an 8-frame light cycle (4 frames per descent, 4px steps ending at the floor), a 4-frame heavy crossing cycle, the x variant advancing one offset per full descent -- both phase-hashed by tile position so neighbors desync.
+func _droplet_positions(x: int, y: int, heavy: bool) -> Array:
+	var f := ((water.tick_count >> 1) + x * 7 + y * 13) & 7
+	var v := (((water.tick_count >> 4) + x * 3 + y * 5) & 3) * 2
+	if heavy:
+		var q := f & 3
+		return [[v, q * 4], [8 + v, 12 - q * 4]]
+	if f < 4:
+		return [[v, f * 4]]
+	return [[8 + v, (f - 4) * 4]]
+
+## Blit one droplet at map (lx, ly) when its containing subtile cell is open -- rain never draws over solids.
+func _drop_at(blit: Callable, kind: String, pattern: int, lx: int, ly: int) -> void:
+	var left := lx % 16 < 8
+	var top := ly % 16 < 8
+	var cell := GridSand.TL if top and left else (GridSand.TR if top else (GridSand.BL if left else GridSand.BR))
+	if (pattern & cell) == 0:
+		blit.call(kind, "drop", lx, ly)
 
 ## The falling column above (x, y) of the same kind: its liquid amount, or 0 when the tile above pours no rain -- rain falls through to the waterline (world §9).
 func _raining_above(x: int, y: int, kind: String) -> int:
@@ -109,12 +121,10 @@ func _raining_above(x: int, y: int, kind: String) -> int:
 	var below_full := not stone.is_solid(x, y) and _liquid_total(a + stone.width) >= 240
 	return 0 if below_full else liq
 
-## Rain dashes over a standing tile's open cells -- the falling column's continuation down to the surface fill (world §9).
-func _rain_through(blit: Callable, kind: String, pattern: int, heavy: bool, px: int, py: int) -> void:
-	var role := "rain_heavy" if heavy else "rain_light"
-	for c in SUB_QUADS:
-		if (pattern & c[0]) == 0:
-			blit.call(kind, role, px + c[1], py + c[2])
+## Rain droplets over a standing tile's open cells -- the falling column's continuation down to the surface fill, phase-hashed to the tile like the field above it (world §9).
+func _rain_through(x: int, y: int, blit: Callable, kind: String, pattern: int, heavy: bool, px: int, py: int) -> void:
+	for d in _droplet_positions(x, y, heavy):
+		_drop_at(blit, kind, pattern, px + d[0], py + d[1])
 
 ## The tile's top-band material: the lightest material holding more than a quarter of the liquid -- mixed tiles read their top subtile as the lighter phase, the bottom as the denser (the per-line stack, coarsened to subtile rows).
 func _band_top(i: int, liq: int) -> int:
