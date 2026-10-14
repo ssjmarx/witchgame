@@ -81,8 +81,8 @@ func _resolve_roles() -> void:
 			lr["lev_%d" % h] = TileAtlas.LAYOUT["%s_lev_%d" % [kind, h]]
 		for c in ["crest_2a", "crest_2b", "crest_4a", "crest_4b", "crest_6a", "crest_6b"]:
 			lr[c] = TileAtlas.LAYOUT["%s_%s" % [kind, c]]
-		for d in 4:
-			lr["rain_%d" % (d + 1)] = TileAtlas.LAYOUT["%s_rain_%d" % [kind, d + 1]]
+		lr["rain_light"] = TileAtlas.LAYOUT["%s_rain_light" % kind]
+		lr["rain_heavy"] = TileAtlas.LAYOUT["%s_rain_heavy" % kind]
 		_roles[kind] = lr
 
 ## Blit one atlas role onto the map at pixel (dx, dy) -- the atlas rect carries the tile or strip size.

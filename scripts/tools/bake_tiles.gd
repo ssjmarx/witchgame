@@ -19,7 +19,7 @@ func _init() -> void:
 			print("BAKE FAIL: cannot write %s" % GRAY)
 			quit(1)
 			return
-		print("== gray atlas painted: %s (88 roles)" % GRAY)
+		print("== gray atlas painted: %s (84 roles)" % GRAY)
 	else:
 		gray = Image.load_from_file(GRAY)
 		if gray == null or gray.is_empty():
@@ -119,12 +119,13 @@ func _crest(img: Image, r: Rect2i, h: int, v: int) -> void:
 		if (x + v) % 4 < 2:
 			img.set_pixel(r.position.x + x, top, crest)
 
-## One rain variant: two column strips of 2px dashes, left strip then right -- density 1-4, the waterfall's scale-up purely count.
-func _rain(img: Image, r: Rect2i, d: int) -> void:
+## One rain tile: two column strips of 2px dashes, left strip then right -- light rains two dashes a strip, heavy four (a near-solid streak); the renderer scrolls them, the tile itself is static.
+func _rain(img: Image, r: Rect2i, heavy: bool) -> void:
 	var c: Color = Palette.BASELINE_LEVELS[2]
+	var count := 4 if heavy else 2
 	for col in 2:
 		var cx := r.position.x + 2 + col * 4
-		var dashes := d if col == 0 else maxi(d - 1, 1)
+		var dashes := count if col == 0 else maxi(count - 1, 2)
 		for k in dashes:
 			@warning_ignore("integer_division")
 			var ry := r.position.y + (k * 8) / maxi(dashes, 1)
@@ -141,5 +142,5 @@ func _paint_liquids(img: Image) -> void:
 		_crest(img, TileAtlas.LAYOUT["%s_crest_4b" % kind], 4, 1)
 		_crest(img, TileAtlas.LAYOUT["%s_crest_6a" % kind], 6, 0)
 		_crest(img, TileAtlas.LAYOUT["%s_crest_6b" % kind], 6, 1)
-		for d in 4:
-			_rain(img, TileAtlas.LAYOUT["%s_rain_%d" % [kind, d + 1]], d + 1)
+		_rain(img, TileAtlas.LAYOUT["%s_rain_light" % kind], false)
+		_rain(img, TileAtlas.LAYOUT["%s_rain_heavy" % kind], true)
