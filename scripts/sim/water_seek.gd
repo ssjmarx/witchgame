@@ -12,17 +12,15 @@ var width: int
 var height: int
 var stone: GridStone
 var pk: TilePacket
-var labels: WaterAnalyze
 var pools: WaterPools
 var flow: WaterFlow
 
 ## Bind the geometry, the packet, the label pass, the pool helpers, and the flow field the deposits stamp.
-func _init(w: int, h: int, terrain: GridStone, p_labels: WaterAnalyze, p_pools: WaterPools, p_flow: WaterFlow) -> void:
+func _init(w: int, h: int, terrain: GridStone, p_pools: WaterPools, p_flow: WaterFlow) -> void:
 	width = w
 	height = h
 	stone = terrain
 	pk = terrain.packet
-	labels = p_labels
 	pools = p_pools
 	flow = p_flow
 
@@ -117,8 +115,7 @@ func transfer_level(s: int, t: int, y: int, diff: int, ptops: PackedInt32Array, 
 		var e_p := pk.xy_of(entry)
 		if e_p.y > 0:
 			var above := pk.idx(t, e_p.y - 1)
-			if stone.drains_v(t, e_p.y) and stone.edge_v_open(t, e_p.y) and pk.pool_total(above) <= GridWater.AIR_PASSABLE_MAX \
-					and _pocket_vented_for(above, s, s_top):
+			if stone.drains_v(t, e_p.y) and stone.edge_v_open(t, e_p.y) and pk.pool_total(above) <= GridWater.AIR_PASSABLE_MAX:
 				var r2 := pk.pool_free(above)
 				if r2 > 0:
 					target = above
@@ -157,14 +154,3 @@ func transfer_level(s: int, t: int, y: int, diff: int, ptops: PackedInt32Array, 
 	else:
 		flow.stamp(target, GridWater.FlowDir.RIGHT if s < t else GridWater.FlowDir.LEFT, move)
 	return move
-
-## Can the air above the receiver's surface give way to this transfer? s and s_top name the donor's own receding headspace.
-func _pocket_vented_for(cell: int, s: int, s_top: int) -> bool:
-	if labels.escape_at(cell):
-		return true
-	if s_top > 0:
-		var s_above := pk.idx(s, s_top - 1)
-		if not stone.is_solid(s, s_top - 1) and pk.pool_total(s_above) <= GridWater.AIR_PASSABLE_MAX \
-				and labels.region_at(s_above) == labels.region_at(cell):
-			return true  # the donor's own receding headspace
-	return false

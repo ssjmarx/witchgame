@@ -381,7 +381,7 @@ func run_fire_tests() -> void:
 		var pk: TilePacket = s[0].packet
 		var r: GridReactions = s[4]
 		var o: Vector2i = s[2]
-		pk.add_damp(pk.idx(o.x + 1, o.y), 64)
+		pk.add_damp(pk.idx(o.x + 1, o.y), 32)
 		r.ignite(o.x, o.y)
 		r.ignite(o.x + 2, o.y)
 	var setup_tier := func(s: Array) -> void:
@@ -434,8 +434,8 @@ func run_fire_tests() -> void:
 		if pk.get_sub(pk.idx(o.x, o.y), TilePacket.K_WOOD) != 0:
 			return "the dry log did not burn out"
 		var iw := pk.idx(o.x + 1, o.y)
-		if pk.get_damp(iw) != 10:
-			return "the siege left damp %d, want 10 -- the faster burn boils less of the neighbor before it gutters" % pk.get_damp(iw)
+		if pk.get_damp(iw) != 34:
+			return "the siege left damp %d, want 34 -- fuel-cell-only fire boils less of the neighbor before it gutters" % pk.get_damp(iw)
 		if pk.get_sub(iw, TilePacket.K_WOOD) != 15 or pk.get_fire(iw) != 0:
 			return "the wet log did not survive intact (wood %d fire %d)" % [pk.get_sub(iw, TilePacket.K_WOOD), pk.get_fire(iw)]
 		return ""
@@ -543,6 +543,16 @@ func run_fire_tests() -> void:
 			return "the pocket beside the column holds %d smoke — the traffic jam is back" % pocket
 		return ""
 
+	var check_mask := func(s: Array) -> String:
+		var pk: TilePacket = s[0].packet
+		for i in pk.w * pk.h:
+			var f := pk.get_fire(i)
+			if f == 0:
+				continue
+			if pk.get_pool(i, TilePacket.Mat.OIL) == 0 and (f & ~pk.get_sub(i, TilePacket.K_WOOD)) != 0:
+				return "fire %d rides fuel-less cells (wood %d) at %s" % [f, pk.get_sub(i, TilePacket.K_WOOD), pk.xy_of(i)]
+		return ""
+
 	_run_example("FT1  the beam burns through to holes", ["WWWWWWWW"], check_burn, setup_ignite_end)
 	_run_example("FT2  a sealed niche smothers on its own smoke", PRESETS[KEY_F11], check_niche, setup_niche)
 	_run_example("FT3  a single log cannot light damp wood", ["WW"], check_refuse, setup_wet_log)
@@ -564,6 +574,15 @@ func run_fire_tests() -> void:
 	run_ticks = TEST_TICKS
 	drift_watch = true   # the fire family creates matter in-tick; the watch ends after them
 	print("== done ==")
+	run_ticks = 3
+	drift_watch = false
+	_run_example("FT12 wood fire never rides a fuel-less cell", ["HH"], check_mask, func(s: Array) -> void:
+		var pk: TilePacket = s[0].packet
+		var o: Vector2i = s[2]
+		for dx in 2:
+			pk.set_sub(pk.idx(o.x + dx, o.y), TilePacket.K_WOOD, GridSand.TL | GridSand.BR)
+		(s[4] as GridReactions).ignite(o.x, o.y))
+	run_ticks = TEST_TICKS
 	
 ## The lab's example set: gas, then fire, in order (the bridge examples live in test_bridge).
 func run_tests() -> void:

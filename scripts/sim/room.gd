@@ -25,7 +25,7 @@ func _init(p_w: int, p_h: int, p_seed: int) -> void:
 	sand = GridSand.new(p_w, p_h, stone, water)
 	react = GridReactions.new(p_w, p_h, stone, sand.structures)
 	debug = GridDebug.new(p_w, p_h, stone, water)
-	bridge = ActorBridge.new(p_w, p_h, stone, rng, water.flow)
+	bridge = ActorBridge.new(p_w, p_h, stone, rng, water, water.flow)
 
 ## One simulation tick in the engine ruling: the bridge at the head (actor exchanges, world.md §4), solids, liquids, reactions last.
 func tick() -> void:

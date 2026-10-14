@@ -59,7 +59,13 @@ atlas.
   16-bit edge-mask tiling (the era's blob/edge-mask trick); bank-tinted tile lookups
   replace per-pixel edge draws.
 
-## 2. The buoyancy lab
+## 2. The sealed-air aftermath (shipped 2026-10 -- the cut landed same-day)
+
+Air is nothing; liquid fills any void it can flow into; sealing is a future
+authored verb (a marker tile, when a puzzle wants it). The occlusion law,
+run-splitting, and the U-bend/oil-trap correctness are untouched and still law.
+
+## 3. The buoyancy lab
 
 - **Structure falling ships** — the compromise rule: an unsupported piece falls as a
   unit, **one tile at a time** (a stone object on a wooden pillar: burn the pillar

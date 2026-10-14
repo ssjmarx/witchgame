@@ -9,16 +9,14 @@ var width: int
 var height: int
 var stone: GridStone
 var pk: TilePacket
-var labels: WaterAnalyze
 var flow: WaterFlow
 
 ## Bind the geometry, the packet, the label pass, and the flow field the deposits stamp.
-func _init(w: int, h: int, terrain: GridStone, p_labels: WaterAnalyze, p_flow: WaterFlow) -> void:
+func _init(w: int, h: int, terrain: GridStone, p_flow: WaterFlow) -> void:
 	width = w
 	height = h
 	stone = terrain
 	pk = terrain.packet
-	labels = p_labels
 	flow = p_flow
 
 ## Topmost row of the contiguous visible-material-m segment containing (x, y). Caller guarantees m >= LINE at (x, y); with no visible segment the walk returns y + 1 -- a sentinel row, not a coordinate.
@@ -42,19 +40,19 @@ func pool_bottom(x: int, y: int) -> int:
 		b += 1
 	return b
 
-## Escape-gated column walk: does some tile above (x, y) have pool headroom with air that reaches open sky? The entry gate for deficit landings; the escape map is the one-tick-stale opinion.
+## Column walk: does some tile above (x, y) hold pool headroom? The entry gate for deficit landings -- air is nothing since the sealed-air cut (world §3).
 func headroom_above(x: int, y: int) -> bool:
 	var yy := y - 1
 	while yy >= 0:
 		var i := pk.idx(x, yy)
 		if pk.solid_capacity(i) == 0:
 			return false
-		if pk.pool_free(i) > 0 and labels.escape_at(i):
+		if pk.pool_free(i) > 0:
 			return true
 		yy -= 1
 	return false
 
-## Eject up to amount units of the lightest materials from tile i up its column, depositing at the first free escape-reachable tiles -- rule five's incompressibility walk, factored: the displacement pass and the lateral deposit share it. Returns units ejected; flow-stamped UP per deposit tile.
+## Eject up to amount units of the lightest materials from tile i up its column, depositing at the first free tiles -- rule five's incompressibility walk, factored: the displacement pass and the lateral deposit share it. Returns units ejected; flow-stamped UP per deposit tile.
 func eject_lightest_up(i: int, amount: int) -> int:
 	var remaining := amount
 	var p := pk.xy_of(i)
@@ -64,18 +62,17 @@ func eject_lightest_up(i: int, amount: int) -> int:
 		if pk.solid_capacity(h) == 0:
 			break
 		var moved := 0
-		if labels.escape_at(h):
-			while remaining > 0 and pk.pool_free(h) > 0:
-				var m := pk.lightest_mat(i)
-				if m < 0:
-					break
-				var have := pk.get_pool(i, m)
-				var room := pk.pool_free(h)
-				var chunk := mini(remaining, mini(have, room))
-				pk.take_pool(i, m, chunk)
-				pk.add_pool(h, m, chunk)
-				moved += chunk
-				remaining -= chunk
+		while remaining > 0 and pk.pool_free(h) > 0:
+			var m := pk.lightest_mat(i)
+			if m < 0:
+				break
+			var have := pk.get_pool(i, m)
+			var room := pk.pool_free(h)
+			var chunk := mini(remaining, mini(have, room))
+			pk.take_pool(i, m, chunk)
+			pk.add_pool(h, m, chunk)
+			moved += chunk
+			remaining -= chunk
 		if moved > 0:
 			flow.stamp(h, GridWater.FlowDir.UP, moved)
 		yy -= 1

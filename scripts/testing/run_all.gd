@@ -1,6 +1,6 @@
-## Run ALL test suite tests.  use with the following commands from the project root
-## ~/.var/app/io.github.MakovWait.Godots/data/godot/app_userdata/Godots/versions/Godot_v4_7_2-stable_linux_x86_64/Godot_v4.7.2-stable_linux.x86_64 --headless --path . -s res://scripts/testing/run_all.gd
-## echo $?
+## Run ALL test suite tests: Godot ... --headless --path . -s res://scripts/testing/run_all.gd; echo $?
+## Targeted mode: append -- and suite substrings to run a slice while iterating one
+## module (e.g. ... run_all.gd -- occlusion fire); the full pass stays the gate.
 
 extends SceneTree
 
@@ -23,7 +23,10 @@ func _init() -> void:
 	var failed: Array[String] = []
 	if _compile_gate():
 		failed.append("compile gate")
+	var pick := OS.get_cmdline_user_args()
 	for path in SUITES:
+		if not _picked(path, pick):
+			continue   # targeted mode: run only the named suites (the full pass stays the gate)
 		var script: GDScript = load(path)
 		var lab: TestSandbox = script.new() as TestSandbox
 		if lab == null:
@@ -44,6 +47,15 @@ func _init() -> void:
 		print("FAILED SUITE: %s" % path)
 	print("== REGRESSION: %d suites, %d failed (%.1f s)" % [SUITES.size(), failed.size(), secs])
 	quit(1 if not failed.is_empty() else 0)
+
+## True when the suite path matches a pick substring (empty picks run everything; tool flags like --regen are ignored).
+func _picked(path: String, pick: PackedStringArray) -> bool:
+	if pick.is_empty():
+		return true
+	for f in pick:
+		if f != "--regen" and path.contains(f):
+			return true
+	return false
 
 ## Hard gate: every global class in the project must parse and instantiate before any suite runs -- a broken script (stale class cache, missing dependency) fails the regression here, loudly, instead of surfacing as vacuous passes downstream.
 func _compile_gate() -> bool:

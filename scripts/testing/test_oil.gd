@@ -283,23 +283,6 @@ func run_oil_tests() -> void:
 			return "surface oil %d, want ~256" % top_oil
 		return ""
 
-	var check_sealed := func(s: Array) -> String:
-		var pk: TilePacket = s[0].packet
-		var o: Vector2i = s[2]
-		for ty in [1, 2, 3, 4]:
-			if pk.get_pool(pk.idx(o.x, o.y + ty), TilePacket.Mat.WATER) != 255:
-				return "left leg lost water at row %d" % ty
-		if pk.get_pool(pk.idx(o.x + 1, o.y + 4), TilePacket.Mat.WATER) != 255:
-			return "channel lost water"
-		for ty in [2, 3, 4]:
-			if pk.get_pool(pk.idx(o.x + 2, o.y + ty), TilePacket.Mat.OIL) != 255:
-				return "right leg oil moved at row %d" % ty
-			if pk.get_pool(pk.idx(o.x + 2, o.y + ty), TilePacket.Mat.WATER) != 0:
-				return "water entered the sealed leg at row %d" % ty
-		if pk.get_pool(pk.idx(o.x + 2, o.y + 1), TilePacket.Mat.WATER) != 0:
-			return "the sealed pocket took water"
-		return ""
-		
 	var check_overtop := func(s: Array) -> String:
 		var pk: TilePacket = s[0].packet
 		var o: Vector2i = s[2]
@@ -342,7 +325,6 @@ func run_oil_tests() -> void:
 	_run_example("OT4  soil sinks through oil", PRESETS[KEY_F4], check_sink_oil, Callable())
 	_run_example("UT1  the manometer equalizes by pressure", PRESETS[KEY_F5], check_manometer, Callable())
 	_run_example("UT2  a corner dump spreads beneath the oil", PRESETS[KEY_F7], check_spread, Callable())
-	_run_example("UT3  a sealed chamber refuses the trade", PRESETS[KEY_F9], check_sealed, Callable())
 	_run_example("UT4  oil overtops, water never follows", PRESETS[KEY_F10], check_overtop, Callable())
 	print("== done ==")
 

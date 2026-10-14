@@ -12,7 +12,6 @@ func run_tests() -> void:
 	_example("DT1  the source fills its shaft, then the dose is un-made", _dt1_source)
 	_example("DT2  the drain empties the bowl to its films", _dt2_drain)
 	_example("DT3  open air eats the gases", _dt3_open_air)
-	_example("DT4  the inverted cup: sealed holds its breath, vented drinks, then drowns its breather", _dt4_cup)
 	_example("DT5  the rain column is not seek's donor", _dt5_rain_not_donor)
 	print("== done ==")
 
@@ -90,36 +89,6 @@ func _dt3_open_air() -> String:
 		return "open air left %d gas units standing" % gas
 	if not pk.assert_all():
 		return "ledger red"
-	return ""
-
-## DT4: the inverted cup, mouth down in the pool -- the control holds its breath (interior bone dry, Ex3a's law); the vented cup drinks: its bottom tile fills to 255, the water then tops 15 in the breather tile itself, the seed drowns, and the fill freezes steady -- the drowned-vent gate made visible in one example.
-func _dt4_cup() -> String:
-	var rows: Array = ["wsssww", "ws.sww", "ws.sww", "wwwwww", "wwwwww"]
-	var control := Room.new(GRID_W, GRID_H, 25)
-	var vented := Room.new(GRID_W, GRID_H, 26)
-	var oc := _carve_preset(control.stone, control.water, rows, control.sand.structures)
-	var ov := _carve_preset(vented.stone, vented.water, rows, vented.sand.structures)
-	vented.stone.packet.set_debug(vented.stone.idx(ov.x + 2, ov.y + 1), TilePacket.DebugTile.OPEN_AIR)
-	for _t in 800:
-		control.tick()
-		vented.tick()
-	var pk_c := control.stone.packet
-	var pk_v := vented.stone.packet
-	var dry := pk_c.get_pool(pk_c.idx(oc.x + 2, oc.y + 1), TilePacket.Mat.WATER) \
-			+ pk_c.get_pool(pk_c.idx(oc.x + 2, oc.y + 2), TilePacket.Mat.WATER)
-	if dry != 0:
-		return "the sealed cup drank %d units -- the pocket gate leaked" % dry
-	var drunk := pk_v.get_pool(pk_v.idx(ov.x + 2, ov.y + 1), TilePacket.Mat.WATER) \
-			+ pk_v.get_pool(pk_v.idx(ov.x + 2, ov.y + 2), TilePacket.Mat.WATER)
-	if drunk < 271:
-		return "the vented cup drank only %d units -- the seed never vented" % drunk
-	var a := pk_v.mat_total(TilePacket.Mat.WATER)
-	for _t in 100:
-		vented.tick()
-	if pk_v.mat_total(TilePacket.Mat.WATER) != a:
-		return "the vented room never settled"
-	if not pk_c.assert_all() or not pk_v.assert_all():
-		return "a ledger went red"
 	return ""
 
 ## DT4: the rain column is not seek's donor -- a source over a 3-wide basin doses 16/tick down the column, and seek levels only the standing surfaces: the column runs gapless from source to floor, and the ledger holds the dose exactly (the teleport ate the stack from the top, mid-air.

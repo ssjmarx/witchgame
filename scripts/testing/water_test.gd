@@ -123,26 +123,6 @@ func run_self_tests() -> void:
 			if w.get_water(o.x + 1 + x, o.y + 4) != 255:
 				return "bottom row not full at x=%d" % x
 		return ""
-	var check_ex2 := func(s: Array) -> String:
-		var w: GridWater = s[1]
-		var o: Vector2i = s[2]
-		for c in [[2, 4], [3, 4], [3, 1], [3, 2], [3, 3]]:
-			if w.get_water(o.x + c[0], o.y + c[1]) != 0:
-				return "sealed pocket took water at %s" % [c]
-		for y in range(1, 5):
-			if w.get_water(o.x + 1, o.y + y) != 255:
-				return "column drained at y=%d" % y
-		return ""
-	var check_ex3a := func(s: Array) -> String:
-		var w: GridWater = s[1]
-		var o: Vector2i = s[2]
-		for x in [2, 3, 4]:
-			if w.get_water(o.x + x, o.y + 2) != 0:
-				return "sealed cave took water at x=%d" % x
-		for x in 7:
-			if w.get_water(o.x + x, o.y) != 255:
-				return "ceiling row changed at x=%d" % x
-		return ""
 	var check_ex3b := func(s: Array) -> String:
 		var w: GridWater = s[1]
 		var o: Vector2i = s[2]
@@ -182,8 +162,6 @@ func run_self_tests() -> void:
 					return "floor cell %d,%d only %d" % [x, y, v]
 		return ""
 	_test("Ex1  U-tube equalizes", KEY_F1, check_ex1)
-	_test("Ex2  sealed pocket frozen", KEY_F2, check_ex2)
-	_test("Ex3a sealed cave stays dry", KEY_F3, check_ex3a)
 	_test("Ex3b cave floods, ceiling drains", KEY_F4, check_ex3b)
 	_test("Ex5  bottom pocket floods, columns level", KEY_F5, check_ex5)
 	_test("Ex6  rotation around stone", KEY_F7, check_ex6)

@@ -7,6 +7,69 @@ everything historical lives here. Newest entries first.*
 
 ---
 
+---
+
+## The sealed-air cut (2026-10 -- the foundation-shaker)
+
+**The ruling:** dynamic sealed air pockets are dropped. Air is nothing -- never
+stored, never gated, never flooded for; liquid fills any void it can flow into,
+and water enters underwater caves like anything else. Authored sealed air MAY
+return as a puzzle verb at a future date. U-bends stay (open-topped manometers,
+oil riding higher in a trap); the run-splitting that keeps them honest stays.
+
+**Why:** the user's own oldest verdict -- the most expensive and inauthentic
+calculation in the project. The escape flood ran every tick (the single most
+expensive per-tick structure in the water engine) to maintain an answer that
+only mattered when geometry was sealed AND liquid was knocking; the player sees
+only a refusal either way; no 90s game computed air reachability. The breaking
+point was the witch-pump fork: her displacement splashing into sealed pockets
+was licensed-by-design (BT10's sealed-pool splash) yet composed with lateral
+creep and repetition into an unbounded pump -- no local rule separates them,
+so the whole model went.
+
+**What died:** water_analyze.gd entirely (region flood, escape fixpoint, body
+flood, contact tables); the air-gate family (grid_water's (a)(c)(d) gate on
+POUR/CREEP, seek's _pocket_vented_for rise clause, the bridge's may_displace);
+headroom/eject escape clauses in water_pools; is_air_passable / is_air_sealed /
+get_region_of; the renderer's pocket tint and CaFx's sealed stencil (with
+DEBUG_SEALED/DEBUG_OPEN). OPEN_AIR furniture keeps its gas-eating only.
+**Tests:** Ex2 (sealed pocket frozen), Ex3a (sealed cave stays dry), UT3
+(sealed chamber refuses), DT4 (inverted cup), OC11-13 (air chambers, air nodes,
+the displacement gate) deleted; OC8-10 keep their run-splitting assertions,
+lose their body-topology ones. **Measured:** the full regression dropped from
+~510-970s to ~264s -- the escape flood was that expensive.
+
+## Three bug reports, three invariant ports (2026-10)
+
+**Fire bits ride fuel cells only** (the orphan-fire report): `_catch_bit` births embers
+on breathing cells, which need not hold wood, and engulf likewise -- so fire bits
+routinely sat on empty cells, where they never burn (the burn reads wood & fire), never
+clear (burnout clears wood & fire), and never die while wood trickled through the tile:
+the never-burning flame. Fix, two halves: **engulf lights fuel cells only** (wood fire
+spreads within the wood; oil fire, positionless, may ride any cell) and the gutter
+**masks fire to the fuel cells each tick** as the invariant's enforcer. The mask alone
+was wrong -- it killed fresh embers before engulf could reach fuel and changed engulf's
+pick (slowing the boil); the gate caught FT3/FT4 flipping and the probe showed the
+fight. Honest retunes: fire on empty cells no longer boils, so FT3's siege now leaves
+damp 34 (was 10) and FT4's middle needs damp 32 to catch (was 64). FT12 pins the oracle.
+
+**A non-bridging tile is not an air node** (the 3/4-pocket report): `is_air_passable`
+and `_is_air_idx` now read `interior_bridges` -- a 3/4 or pinched tile is matter with
+a nook, holding no pocket membership and tinting nothing in the G overlay. Side effect,
+correct: an OPEN_AIR fixture on a non-bridging tile stops venting. OC12 pins it.
+
+**The bow wave respects the air-gate** (the witch-fills-pockets report): the bridge's
+`_pour_into` accepted on `pool_free` alone -- displacement poured straight into sealed
+pockets. GridWater exposes `may_enter` (the sim's own `_gate`), and every bridge pour
+(entry, wake, sides, eject climb) routes through it. OC13 pins the gate directly.
+
+**Two follow-ups the gate caught:** a non-bridging tile must never START a body either
+(the pinched tub's wall was absorbing its feeding side as the flood's origin -- OC10);
+and the first OC13 world walled its own chamber shut (the probe read region -1 and the
+gate's ungated path fired -- the example's bug, not the engine's).
+
+---
+
 ## The pinched-tile bridge cut (2026-10, the user's air-pocket report follow-up)
 
 Air chambers split by a pinched (TL+BR) wall read as one pocket, and the same hole

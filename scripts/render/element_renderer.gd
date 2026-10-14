@@ -171,13 +171,6 @@ func _cell_face(x: int, y: int, c: int, kind: String, member: bool) -> void:
 
 ## Overlay air pockets, per-segment level lines, and the tile grid (G).
 func _draw_debug() -> void:
-	# air-pocket states: sealed vs vented
-	for y in stone.height:
-		for x in stone.width:
-			if water.is_air_passable(x, y):
-				var c := Palette.DEBUG_SEALED if water.is_air_sealed(x, y) else Palette.DEBUG_OPEN
-				image.fill_rect(Rect2i(x * TILE, y * TILE, TILE, TILE), c)
-	
 	# level lines: one per contiguous water segment per column
 	for x in stone.width:
 		var y := 0

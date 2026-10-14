@@ -33,7 +33,6 @@ var tick_count := 0           # ticks so far; parity flips the sweep direction
 # the sibling modules: flow export, gas rules, label pass, pool geometry, and the seek machinery, over this room's packet
 var flow: WaterFlow
 var gas: WaterGas
-var labels: WaterAnalyze
 var pools: WaterPools
 var seek: WaterSeek
 var _level_snap := PackedByteArray()   # reused per tick -- the snapshot allocates nothing
@@ -47,9 +46,8 @@ func _init(w: int, h: int, terrain: GridStone) -> void:
 	
 	flow = WaterFlow.new(w, h)
 	gas = WaterGas.new(w, h, terrain, flow)
-	labels = WaterAnalyze.new(w, h, terrain)
-	pools = WaterPools.new(w, h, terrain, labels, flow)
-	seek = WaterSeek.new(w, h, terrain, labels, pools, flow)
+	pools = WaterPools.new(w, h, terrain, flow)
+	seek = WaterSeek.new(w, h, terrain, pools, flow)
 	
 	_level_snap.resize(w * h)
 
@@ -90,25 +88,6 @@ func get_level(x: int, y: int) -> int:
 		return Level.DRY
 	return _band(pk.get_pool(idx(x, y), W) >> 4)
 
-## True if the cell is not solid and holds at most a sub-visible film of any liquid.
-func is_air_passable(x: int, y: int) -> bool:
-	if not in_bounds(x, y):
-		return false
-	var i := idx(x, y)
-	return not stone.is_solid(x, y) and pk.pool_total(i) <= AIR_PASSABLE_MAX
-
-## Air-pocket id at (x, y), or -1 when none or out of bounds.
-func get_region_of(x: int, y: int) -> int:
-	if not in_bounds(x, y):
-		return -1
-	return labels.region_at(y * width + x)
-
-## Debug/renderer helper: true if this cell's air cannot reach open sky.
-func is_air_sealed(x: int, y: int) -> bool:
-	if not in_bounds(x, y):
-		return false
-	return not labels.escape_at(idx(x, y))
-
 ## Escape-gated headroom walk, delegated to the pool module -- the sand rules' entry gate reads it (the signature stays GridWater's public API).
 func headroom_above(x: int, y: int) -> bool:
 	return pools.headroom_above(x, y)
@@ -138,7 +117,6 @@ func clear() -> void:
 	tick_count = 0   # reloads reproduce: the sweep phase resets with the world
 	for m in TilePacket.MAT_COUNT:
 		pk.clear_mat(m)
-	labels.reset()
 
 ## One simulation tick: relabel, eject displacement, run every mover's rules densest-first (liquids fall and seek level, gases rise), stratify densities, verify volume, verify the ledger, emit band changes.
 func tick() -> void:
@@ -147,7 +125,6 @@ func tick() -> void:
 	flow.reset()
 	var snap := _levels_snapshot()
 	var checksum := _checksum_all()
-	labels.analyze()
 	_displacement_pass()
 	for m in MOVERS:
 		if not pk.has_mat(m):
@@ -248,7 +225,7 @@ func _cell_pass(i: int, m: int) -> void:
 				continue  # the corner is pinched -- no pouring through a sealed diagonal (world §3)
 			var t := idx(tx, p.y + 1)
 			var free := pk.pool_free(t)
-			if pk.pool_total(t) < LINE and free > 0 and _gate(t, i, m):
+			if pk.pool_total(t) < LINE and free > 0:
 				var move := mini(mini(w, free), visc)
 				var taken := pk.take_pool(i, m, move)
 				pk.add_pool(t, m, taken)
@@ -268,38 +245,14 @@ func _cell_pass(i: int, m: int) -> void:
 		var n := idx(nx, p.y)
 		var nw := pk.get_pool(n, m)
 		var free := pk.pool_free(n)
-		if nw < LINE and free > 0 and nw < w - 1 and _gate(n, i, m):
+		if nw < LINE and free > 0 and nw < w - 1:
 			var move := mini(mini((w - nw) >> 1, free), visc)
 			var taken := pk.take_pool(i, m, move)
 			pk.add_pool(n, m, taken)
 			flow_stamp(n, FlowDir.RIGHT if dx > 0 else FlowDir.LEFT, taken)
 			w = pk.get_pool(i, m)
 
-## May material m from src enter dry cell t? Only if the displaced air has somewhere to go.
-func _gate(t: int, src: int, m: int) -> bool:
-	var region := labels.region_at(t)
-	if region < 0:
-		return true
-	if pk.get_pool(src, m) < LINE:
-		return true  # sub-visible film: same pocket, internal shuffle
-	# (a) the displaced air can reach open sky
-	if labels.escape_at(t):
-		return true
-	# (c) the donor's own headspace is this pocket: it recedes as material moves
-	var sp := _xy_of(src)
-	var top := pools.segment_top(sp.x, sp.y, m)
-	if top > 0:
-		var above := idx(sp.x, top - 1)
-		if not stone.is_solid(sp.x, top - 1) and pk.pool_total(above) <= AIR_PASSABLE_MAX \
-				and labels.region_at(above) == region:
-			return true
-	# (d) rotation: pocket and body also touch higher up — air out high, liquid in low
-	var b := labels.body_at(src)
-	if b >= 0:
-		var bt: Dictionary = labels.body_top(region)
-		if bt.has(b) and int(bt[b]) < sp.y:
-			return true
-	return false
+## May material m from src enter dry cell t? Retired with the sealed-air cut: liquid fills any void it can flow into, no air licensing (world §3).
 
 ## Rule five: every over-budget tile ejects its excess up its column -- solids sink, liquid climbs. Lightest material first; leftover excess persists (the entry gate should have prevented it).
 func _displacement_pass() -> void:

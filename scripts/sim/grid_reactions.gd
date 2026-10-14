@@ -124,7 +124,15 @@ func _fire_pass() -> void:
 		if f == 0:
 			continue
 		var p := pk.xy_of(i)
-		# 1) gutter: fire lives only on burnable matter beneath it -- the spark dies this tick, and a fire whose wood is gone gutters even with pool left (the pool is meaningless without fuel)
+		# 1) gutter: fire bits live only on fuel cells -- wood fire off a wood cell dies the tick it appears (oil fire may ride empty cells by design), and a fire whose fuel is gone gutters even with pool left (the pool is meaningless without fuel)
+		var mask: int = pk.get_sub(i, TilePacket.K_WOOD)
+		if pk.get_pool(i, OIL) > 0:
+			mask = 15
+		if (f & ~mask) != 0:
+			f &= mask
+			pk.set_fire(i, f)
+			if f == 0:
+				continue
 		if not _fuel_here(i):
 			pk.set_fire(i, 0)
 			continue
@@ -162,10 +170,13 @@ func _fire_pass() -> void:
 		if units < BURN_RATE:
 			units += pk.take_pool(i, OIL, (BURN_RATE - units) >> 2)
 		burned_units += units
-		# 4) engulf: one new bit per tick while burnable matter remains, bottom cells first (the diagram's fill order)
+		# 4) engulf: one new bit per tick while burnable matter remains, bottom cells first (the diagram's fill order) -- onto fuel cells only: wood fire spreads within the wood, oil fire (positionless) may ride any cell
 		if _burnable(i):
+			var cells: int = pk.get_sub(i, TilePacket.K_WOOD)
+			if cells == 0 and pk.get_pool(i, OIL) > 0:
+				cells = 15
 			for bit in [GridSand.BL, GridSand.BR, GridSand.TL, GridSand.TR]:
-				if (f & bit) == 0:
+				if (f & bit) == 0 and (cells & bit) != 0:
 					pk.set_fire(i, f | bit)
 					f |= bit
 					break

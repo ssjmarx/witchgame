@@ -24,14 +24,16 @@ var height: int
 var rng: RandomNumberGenerator
 var bodies: Array[ThermalBody] = []
 var flow: WaterFlow
+var water: GridWater
 
-## Bind the packet via the stone facade and the room PRNG every roll happens inside the tick, never on the frame
-func _init(w: int, h: int, terrain: GridStone, p_rng: RandomNumberGenerator, p_flow: WaterFlow) -> void:
+## Bind the packet via the stone facade, the water engine (its air-gate governs every pour), and the room PRNG every roll happens inside the tick, never on the frame
+func _init(w: int, h: int, terrain: GridStone, p_rng: RandomNumberGenerator, p_water: GridWater, p_flow: WaterFlow) -> void:
 	width = w
 	height = h
 	stone = terrain
 	pk = terrain.packet
 	rng = p_rng
+	water = p_water
 	flow = p_flow
 
 ## Add a body to the registry; the scene owns it and the room census never carries it.
@@ -142,6 +144,7 @@ func _boil(b: ThermalBody) -> void:
 	var k := _pick_index(b)
 	var t := b.tiles[k]
 	var i := stone.idx(t.x, t.y)
+	@warning_ignore("shadowed_variable")
 	var water := pk.get_pool(i, W)
 	# the glass model: her volume raises the level (content + 64 per nibble); the conversion still caps at actual content
 	var depth := water + 64 * b.volume_at(k)
@@ -189,6 +192,7 @@ func _absorb(b: ThermalBody) -> void:
 	var k := _pick_index(b)
 	var t := b.tiles[k]
 	var i := stone.idx(t.x, t.y)
+	@warning_ignore("shadowed_variable")
 	var water := pk.get_pool(i, W)
 	if water <= 0:
 		return
@@ -238,6 +242,7 @@ func _drip(b: ThermalBody) -> void:
 			b.wetness -= 1
 
 ## The tier rate by the tile's water: deep pools drink and boil four times a film (world.md §4.2).
+@warning_ignore("shadowed_variable")
 func _tier(water: int) -> int:
 	return TIER_FAST if water >= 128 else TIER_SLOW
 
@@ -251,7 +256,7 @@ func _quanta(num: int, den: int = 10) -> int:
 		base += 1
 	return base
 
-## Pour left units of the source's lightest matter into dst, never taking more than dst accepts; returns what remains. The refund guard should be unreachable now -- an over-capacity source frees excess, not room, and the old refund promise died with the claim.
+## Pour left units of the source's lightest matter into dst, never taking more than dst accepts returns what remains. The refund guard should be unreachable now -- an over-capacity source frees excess, not room, and the old refund promise died with the claim.
 func _pour_into(src: int, dst: int, left: int) -> int:
 	while left > 0:
 		var m := pk.lightest_mat(src)

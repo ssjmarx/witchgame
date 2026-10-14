@@ -60,8 +60,6 @@ const BASELINE_LEVELS: Array[Color] = [Color("#000000"), Color("#555555"), Color
 # -- Debug and editor overlays: exempt from the law, never shipped art ------
 const DEBUG_GRID      := Color("#232b44")
 const DEBUG_CURSOR    := Color("#ffffff")
-const DEBUG_SEALED    := Color("#5e2833")
-const DEBUG_OPEN      := Color("#1e4a44")
 const DEBUG_LEVEL     := Color("#a0d8c0")
 const DEBUG_FLOW      := Color("#5ae682")
 const DEBUG_SOIL_FLOW := Color("#368c4e")
