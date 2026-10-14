@@ -125,6 +125,19 @@ func _drop(img: Image, r: Rect2i) -> void:
 	img.set_pixel(r.position.x, r.position.y, c)
 	img.fill_rect(Rect2i(r.position.x, r.position.y + 1, 2, 2), c)
 
+## One wave frame: a rolling crest on a full body -- three rows of base water with a five-row bulge at `peak` (0 = left, 1 = right), crest color on the bulge's top, body beneath. Frame pair a/b rolls one bulge-width per step (world §9).
+func _wave(img: Image, r: Rect2i, peak: int) -> void:
+	var body: Color = Palette.BASELINE_LEVELS[1]
+	var crest: Color = Palette.BASELINE_LEVELS[2]
+	var heights := [4, 5, 5, 5, 4, 3, 3, 3]
+	if peak != 0:
+		heights.reverse()
+	for x in 8:
+		var top: int = 8 - heights[x]
+		img.set_pixel(r.position.x + x, r.position.y + top, crest)
+		for y in range(top + 1, 8):
+			img.set_pixel(r.position.x + x, r.position.y + y, body)
+
 ## Paint the four liquid kinds' roles: level tiles, crest pairs, the droplet sprite.
 func _paint_liquids(img: Image) -> void:
 	for kind in ["water", "oil", "acid", "lava"]:
@@ -137,3 +150,7 @@ func _paint_liquids(img: Image) -> void:
 		_crest(img, TileAtlas.LAYOUT["%s_crest_6a" % kind], 6, 0)
 		_crest(img, TileAtlas.LAYOUT["%s_crest_6b" % kind], 6, 1)
 		_drop(img, TileAtlas.LAYOUT["%s_drop" % kind])
+		_wave(img, TileAtlas.LAYOUT["%s_wave_h_a" % kind], 0)
+		_wave(img, TileAtlas.LAYOUT["%s_wave_h_b" % kind], 1)
+		_wave(img, TileAtlas.LAYOUT["%s_wave_d_a" % kind], 0)
+		_wave(img, TileAtlas.LAYOUT["%s_wave_d_b" % kind], 1)

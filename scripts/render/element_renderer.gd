@@ -23,7 +23,6 @@ var fx: CaFx                 # the second painter: ambiance under, effects over 
 var liquids: Liquids
 
 var _base: Image
-var _frame_ms := 0
 var _atlases := {}   # kind name -> bank-colored atlas Image (the baked PNGs)
 var _roles := {}     # kind name -> role name -> atlas rect, resolved once at build
 
@@ -82,6 +81,8 @@ func _resolve_roles() -> void:
 		for c in ["crest_2a", "crest_2b", "crest_4a", "crest_4b", "crest_6a", "crest_6b"]:
 			lr[c] = TileAtlas.LAYOUT["%s_%s" % [kind, c]]
 		lr["drop"] = TileAtlas.LAYOUT["%s_drop" % kind]
+		for w in ["wave_h_a", "wave_h_b", "wave_d_a", "wave_d_b"]:
+			lr[w] = TileAtlas.LAYOUT["%s_%s" % [kind, w]]
 		_roles[kind] = lr
 
 ## Blit one atlas role onto the map at pixel (dx, dy) -- the atlas rect carries the tile or strip size.
@@ -103,7 +104,7 @@ func _density(fill: int) -> int:
 		return 3
 	return 4
 
-## Repaint the tick base and recapture the desires: ambiance and solid terrain only. The dynamic layers paint per frame over a copy of this. Call on every state change -- tick, stroke, restore, overlay toggle.
+## Repaint the whole world at tick cadence: ambiance and terrain, then the dynamic layers -- liquids, gas, soil, fire. Every animation clock in those layers derives from tick_count (the pose-model easing that once demanded per-frame painting is gone), so one paint per tick draws exactly what six would. Call on every state change -- tick, stroke, restore, overlay toggle.
 func redraw() -> void:
 	fx.under(image)
 	for y in stone.height:
@@ -111,15 +112,6 @@ func redraw() -> void:
 			var i := stone.idx(x, y)
 			if stone.is_solid(x, y) or stone.packet.get_sub(i, TilePacket.K_STONE) != 0 or stone.packet.get_sub(i, TilePacket.K_WOOD) != 0:
 				_draw_terrain(x, y)
-	_base.blit_rect(image, Rect2i(0, 0, image.get_width(), image.get_height()), Vector2i.ZERO)
-
-## The frame pass: advance the pose on the render clock, restore the tick base, then paint the dynamic layers -- liquids from the pose, gas, soil, and fire from the packet -- then the FX over-pass and overlays. Call from the owning scene's _process.
-func frame() -> void:
-	var now := Time.get_ticks_msec()
-	@warning_ignore("unused_variable")
-	var dt := clampi(now - _frame_ms, 0, 250)
-	_frame_ms = now
-	image.blit_rect(_base, Rect2i(0, 0, image.get_width(), image.get_height()), Vector2i.ZERO)
 	for y in stone.height:
 		for x in stone.width:
 			var px := x * TILE
@@ -130,6 +122,11 @@ func frame() -> void:
 			if n != 0:
 				_draw_soil(x, y, px, py, n)
 			_draw_fire(x, y, px, py)
+	_base.blit_rect(image, Rect2i(0, 0, image.get_width(), image.get_height()), Vector2i.ZERO)
+
+## The frame pass: restore the tick base (the world itself paints at tick cadence in redraw), then the genuinely per-frame layers -- the FX over-pass, overlays, and the cursor. Call from the owning scene's _process.
+func frame() -> void:
+	image.blit_rect(_base, Rect2i(0, 0, image.get_width(), image.get_height()), Vector2i.ZERO)
 	fx.over(image)
 	if debug:
 		_draw_debug()

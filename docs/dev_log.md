@@ -1,3 +1,21 @@
+## The universal special-draw bank (render anti-flicker law)
+
+- **Ruling**: every special liquid picture -- rain, waterfall, waves (h and d) -- plays at least one full animation cycle after its conditions cease; the waterline returns only after a full quiet cycle. Promoted from the wave-only bank after live flicker reports.
+- **The byte**: low 5 bits ticks left (capped at two cycles: 16 for waves/waterfall, 31 for rain), high 3 bits the latched class (h / dL / dR / rain / waterfall, direction folded in).
+- **Group latching**: waves stay waves, drops stay drops -- a shape only switches through a full quiet cycle, so a flow oscillating lateral↔diagonal every tick renders one constant wave (probe S1: 16/16 stable; pre-fix `h.d.h.d.`).
+- **The tick frontier (post-fix)**: the bank originally spent one unit per *paint*, but the live frame loop paints ~6x per sim tick -- holdovers drained 6x too fast, flicker faster than the animations themselves. The bank now spends via a global tick frontier (one spend pass per new tick_count); probe S2 (one paint/tick) and S5 (six paints/tick) drain identically. Lesson: the probe modeled a cadence the live loop does not run.
+- **Probe-caught bugs during the build**: the first cap was 31 flat (sustained activity banked ~4 cycles, S2 held 20+ waves -- now exactly one banked cycle, 15 w's then level); a diagonal rapid on *standing* water drew nothing at all (the diagonal wave only existed in the falling branch -- now it owns the standing tile's 3/4 too); an empty tile froze its bank (now cleared with the picture, so no ghost can resurrect).
+- **Also this arc**: rapids outrank the waterfall read (a diagonal-dominant tile is a rapid at any weight, never a waterfall -- pillar-split at feed 255 now waves instead of waterfalling); the diagonal-flow probe library (pillar/stairs × low/med/high feed) lives in this session's record, not the tree.
+- **Open ruling**: steady-state staircases hold a puddle per step, and POUR's dry-space-only gate (the anti-oscillation law) means no diagonal pours land in full puddles -- the water creeps the tops and falls off the end. POUR widening deferred by the human ("i may come back to adjust POUR afterward").
+
+## Rapids polish: diagonals, override-not-overlay, the bulge, the bank
+
+- **Diagonals corrected**: down-right rolls on TL+BR, down-left on TR+BL -- the first cut had the pair swapped.
+- **Waves override, never overlay**: a rolling river's bottom row skips the level fill; the wave art carries its own body water. The first cut blitted the wave over the fill, reading as current marks on blue.
+- **The bulge art**: three rows of base water with a five-row rolling crest (heights [4,5,5,5,4,3,3,3], frame b reversed) -- the first cut was a monotone ramp, not a wave.
+- **The wave bank** (the ruling): view state, one byte per tile, one cycle deep -- a rapid tops the bank to two cycles (playing plus exactly one banked), a quiet tick spends one; flow must vanish a full 0.8 s cycle before the waterline returns. The stateless alternatives were weighed honestly: cycle-boundary sampling gives most of the anti-flicker but not the guaranteed continuation; hysteresis is memory by definition. Adopted as the renderer's first per-tile state, fenced in §9 as view-only, decaying, never census.
+- Probe verified: the wave overrides the bottom row (only the top row's level tile draws beside it) and the timeout -- the wave holds seven quiet paints and the level returns on the eighth, exactly one CYCLE after flow death.
+
 # dev_log.md — the development log
 
 *The evidence of decisions made during development: session rulings, changelogs,
@@ -10,6 +28,8 @@ everything historical lives here. Newest entries first.*
 ---
 
 ## The wetability clause and the droplet rain (2026-10 -- post-2b nits)
+
+- **Rapids shipped**: lateral or diagonal flow at RAPID_MIN 48+ draws waves -- two curve-derived frames (a rolling bulge, crest over body), phase-hashed by tile like the rain. Horizontal: bottom row alone under half capacity, top row with the bottom pinned full over it (no vanishing mid-wave). Diagonal: always 3/4 -- wave on the leading diagonal, the remaining bottom cell pinned full. Standing rivers roll the bottom-row wave. Verified by pixel probe: A [0,0,26,26], B [32,37,64,64], C [0,26,26,64], D rain 10.
 
 - **A lone notch beside water drains through** (the user's 3/4-tile report): a TL+TR+BR tile with BL open held water that crept in from the side, because `drains_v` demanded a full open column. The fix is the **wetability clause**: a blocked tile still drains through an open exit cell when the exterior tile beside it is open at that cell and holds real liquid -- the water can stand there, so it can fall from there. The wet source must hold liquid (gases wet nothing): that keeps OC7's pinched tile sealed (its BL faces a dry open column) and OC2's zigzag holding (its BL faces solid). Direction-aware (`drains_v` falls, new `drains_up` for gas rise and the seek lift -- a top-notch clause mirrors the bottom one); OC14/OC15 pin the report's scene and its tile-boundary control.
 - **Rain became droplets**: the two-band dash tiles read as static wallpaper. New art: one 2x3 droplet sprite (`drop` role); light rains one droplet descending tl->bl then one tr->br (8-frame cycle, 4px steps); heavy rains two crossing tl+br -> bl+tr (4 frames); four x-offsets cycle in order. The clock is global and decoupled from the sim -- the animation always completes, ending on the cell floor. Waterfall = fill + the heavy pair; rain-through uses the same positions, masked to open cells.
