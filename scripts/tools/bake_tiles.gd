@@ -12,14 +12,14 @@ const GRAY := "res://assets/gray/tiles.png"
 func _init() -> void:
 	var gray: Image = null
 	if "--regen" in OS.get_cmdline_user_args() or not FileAccess.file_exists(GRAY):
-		gray = Image.create(TileAtlas.GRID * TileAtlas.CELL, 5 * TileAtlas.CELL, false, Image.FORMAT_RGBA8)
+		gray = Image.create(TileAtlas.GRID * TileAtlas.CELL, 13 * TileAtlas.CELL, false, Image.FORMAT_RGBA8)
 		_paint_all(gray)
 		DirAccess.make_dir_recursive_absolute("res://assets/gray")
 		if gray.save_png(GRAY) != OK:
 			print("BAKE FAIL: cannot write %s" % GRAY)
 			quit(1)
 			return
-		print("== gray atlas painted: %s (40 roles)" % GRAY)
+		print("== gray atlas painted: %s (88 roles)" % GRAY)
 	else:
 		gray = Image.load_from_file(GRAY)
 		if gray == null or gray.is_empty():
@@ -69,6 +69,7 @@ func _paint_all(img: Image) -> void:
 	for f in 3:
 		_flat(img, TileAtlas.LAYOUT["fire_ember_%d" % f], f + 1)
 		_lick(img, TileAtlas.LAYOUT["fire_lick_%d" % f], f)
+	_paint_liquids(img)
 
 ## Fill a layout rect flat with baseline slot s.
 func _flat(img: Image, r: Rect2i, s: int) -> void:
@@ -102,3 +103,43 @@ func _lick(img: Image, r: Rect2i, v: int) -> void:
 	img.fill_rect(Rect2i(r.position.x, r.position.y + 3, 8, 5), base)
 	img.fill_rect(Rect2i(cx, r.position.y + 8 - (5 + v), 2, 5 + v), tongue)
 	img.set_pixel(cx, r.position.y + 8 - (5 + v), tip)
+
+## One liquid level tile: a bottom-anchored fill of h pixels in the body slot.
+func _level(img: Image, r: Rect2i, h: int) -> void:
+	var c: Color = Palette.BASELINE_LEVELS[1]
+	c.a = 1.0
+	img.fill_rect(Rect2i(r.position.x, r.position.y + 8 - h, 8, h), c)
+
+## One crest tile: the level fill with its top row waved in the crest slot -- variant a peaks left, b peaks right (the synchronized ping-pong pair).
+func _crest(img: Image, r: Rect2i, h: int, v: int) -> void:
+	_level(img, r, h)
+	var crest: Color = Palette.BASELINE_LEVELS[2]
+	var top := r.position.y + 8 - h
+	for x in 8:
+		if (x + v) % 4 < 2:
+			img.set_pixel(r.position.x + x, top, crest)
+
+## One rain variant: two column strips of 2px dashes, left strip then right -- density 1-4, the waterfall's scale-up purely count.
+func _rain(img: Image, r: Rect2i, d: int) -> void:
+	var c: Color = Palette.BASELINE_LEVELS[2]
+	for col in 2:
+		var cx := r.position.x + 2 + col * 4
+		var dashes := d if col == 0 else maxi(d - 1, 1)
+		for k in dashes:
+			@warning_ignore("integer_division")
+			var ry := r.position.y + (k * 8) / maxi(dashes, 1)
+			img.fill_rect(Rect2i(cx, ry, 2, 2), c)
+
+## Paint the four liquid kinds' roles: level tiles, crest pairs, rain variants.
+func _paint_liquids(img: Image) -> void:
+	for kind in ["water", "oil", "acid", "lava"]:
+		for h in [2, 4, 6, 8]:
+			_level(img, TileAtlas.LAYOUT["%s_lev_%d" % [kind, h]], h)
+		_crest(img, TileAtlas.LAYOUT["%s_crest_2a" % kind], 2, 0)
+		_crest(img, TileAtlas.LAYOUT["%s_crest_2b" % kind], 2, 1)
+		_crest(img, TileAtlas.LAYOUT["%s_crest_4a" % kind], 4, 0)
+		_crest(img, TileAtlas.LAYOUT["%s_crest_4b" % kind], 4, 1)
+		_crest(img, TileAtlas.LAYOUT["%s_crest_6a" % kind], 6, 0)
+		_crest(img, TileAtlas.LAYOUT["%s_crest_6b" % kind], 6, 1)
+		for d in 4:
+			_rain(img, TileAtlas.LAYOUT["%s_rain_%d" % [kind, d + 1]], d + 1)

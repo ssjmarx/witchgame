@@ -4,7 +4,7 @@
 
 extends RefCounted
 
-const GRID := 8   # cells across the atlas; five rows hold every role
+const GRID := 8   # cells across the atlas; thirteen rows hold every role
 const CELL := 8   # pixels per cell -- the matter grid's own resolution
 
 ## role -> atlas rect in pixels; lip and seam strips are 8x1 / 1x8 overlays.
@@ -29,6 +29,62 @@ const LAYOUT := {
 	"fire_ember_0": Rect2i(0, 32, 8, 8), "fire_ember_1": Rect2i(8, 32, 8, 8),
 	"fire_ember_2": Rect2i(16, 32, 8, 8), "fire_lick_0": Rect2i(24, 32, 8, 8),
 	"fire_lick_1": Rect2i(32, 32, 8, 8), "fire_lick_2": Rect2i(40, 32, 8, 8),
+	"water_lev_2": Rect2i(0, 40, 8, 8),
+	"water_lev_4": Rect2i(8, 40, 8, 8),
+	"water_lev_6": Rect2i(16, 40, 8, 8),
+	"water_lev_8": Rect2i(24, 40, 8, 8),
+	"water_crest_2a": Rect2i(32, 40, 8, 8),
+	"water_crest_2b": Rect2i(40, 40, 8, 8),
+	"water_crest_6a": Rect2i(48, 40, 8, 8),
+	"water_crest_6b": Rect2i(56, 40, 8, 8),
+	"water_crest_4a": Rect2i(48, 48, 8, 8),
+	"water_crest_4b": Rect2i(56, 48, 8, 8),
+	"water_rain_1": Rect2i(0, 48, 8, 8),
+	"water_rain_2": Rect2i(8, 48, 8, 8),
+	"water_rain_3": Rect2i(16, 48, 8, 8),
+	"water_rain_4": Rect2i(24, 48, 8, 8),
+	"oil_lev_2": Rect2i(0, 56, 8, 8),
+	"oil_lev_4": Rect2i(8, 56, 8, 8),
+	"oil_lev_6": Rect2i(16, 56, 8, 8),
+	"oil_lev_8": Rect2i(24, 56, 8, 8),
+	"oil_crest_2a": Rect2i(32, 56, 8, 8),
+	"oil_crest_2b": Rect2i(40, 56, 8, 8),
+	"oil_crest_6a": Rect2i(48, 56, 8, 8),
+	"oil_crest_6b": Rect2i(56, 56, 8, 8),
+	"oil_crest_4a": Rect2i(48, 64, 8, 8),
+	"oil_crest_4b": Rect2i(56, 64, 8, 8),
+	"oil_rain_1": Rect2i(0, 64, 8, 8),
+	"oil_rain_2": Rect2i(8, 64, 8, 8),
+	"oil_rain_3": Rect2i(16, 64, 8, 8),
+	"oil_rain_4": Rect2i(24, 64, 8, 8),
+	"acid_lev_2": Rect2i(0, 72, 8, 8),
+	"acid_lev_4": Rect2i(8, 72, 8, 8),
+	"acid_lev_6": Rect2i(16, 72, 8, 8),
+	"acid_lev_8": Rect2i(24, 72, 8, 8),
+	"acid_crest_2a": Rect2i(32, 72, 8, 8),
+	"acid_crest_2b": Rect2i(40, 72, 8, 8),
+	"acid_crest_6a": Rect2i(48, 72, 8, 8),
+	"acid_crest_6b": Rect2i(56, 72, 8, 8),
+	"acid_crest_4a": Rect2i(48, 80, 8, 8),
+	"acid_crest_4b": Rect2i(56, 80, 8, 8),
+	"acid_rain_1": Rect2i(0, 80, 8, 8),
+	"acid_rain_2": Rect2i(8, 80, 8, 8),
+	"acid_rain_3": Rect2i(16, 80, 8, 8),
+	"acid_rain_4": Rect2i(24, 80, 8, 8),
+	"lava_lev_2": Rect2i(0, 88, 8, 8),
+	"lava_lev_4": Rect2i(8, 88, 8, 8),
+	"lava_lev_6": Rect2i(16, 88, 8, 8),
+	"lava_lev_8": Rect2i(24, 88, 8, 8),
+	"lava_crest_2a": Rect2i(32, 88, 8, 8),
+	"lava_crest_2b": Rect2i(40, 88, 8, 8),
+	"lava_crest_6a": Rect2i(48, 88, 8, 8),
+	"lava_crest_6b": Rect2i(56, 88, 8, 8),
+	"lava_crest_4a": Rect2i(48, 96, 8, 8),
+	"lava_crest_4b": Rect2i(56, 96, 8, 8),
+	"lava_rain_1": Rect2i(0, 96, 8, 8),
+	"lava_rain_2": Rect2i(8, 96, 8, 8),
+	"lava_rain_3": Rect2i(16, 96, 8, 8),
+	"lava_rain_4": Rect2i(24, 96, 8, 8),
 }
 
 ## kind name -> the bank-colored bake; every file shares LAYOUT.
@@ -39,12 +95,17 @@ const FILES := {
 	"smoke": "res://assets/baked/tiles_smoke.png",
 	"steam": "res://assets/baked/tiles_steam.png",
 	"fire": "res://assets/baked/tiles_fire.png",
+	"water": "res://assets/baked/tiles_water.png",
+	"oil": "res://assets/baked/tiles_oil.png",
+	"acid": "res://assets/baked/tiles_acid.png",
+	"lava": "res://assets/baked/tiles_lava.png",
 }
 
 ## kind name -> the bank that colors it; the baker reads this, and so does the palette suite's file gate.
 const BANKS := {
 	"stone": Palette.BANK_STONE, "wood": Palette.BANK_WOOD, "soil": Palette.BANK_SOIL,
 	"smoke": Palette.BANK_SMOKE, "steam": Palette.BANK_STEAM, "fire": Palette.BANK_FIRE,
+	"water": Palette.BANK_WATER, "oil": Palette.BANK_OIL, "acid": Palette.BANK_ACID, "lava": Palette.BANK_LAVA,
 }
 
 ## Load every atlas from its imported bake; returns kind name -> Image. Call once at renderer build.

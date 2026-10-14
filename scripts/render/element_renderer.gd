@@ -6,7 +6,6 @@ class_name ElementRenderer
 extends RefCounted
 
 const TILE := 16  # pixels per tile
-const FALL_MIN := 16    # <tune> — downflow arrivals before a tile renders as falling (one line's worth)
 const SUB_QUADS: Array = [[GridSand.TL, 0, 0], [GridSand.TR, 8, 0], [GridSand.BL, 0, 8], [GridSand.BR, 8, 8]]
 const BOTTOM_MASK := GridSand.BL | GridSand.BR  # the two lower subtile slots
 const TOP_MASK := GridSand.TL | GridSand.TR      # the two upper subtile slots
@@ -76,13 +75,22 @@ func _resolve_roles() -> void:
 		fr["ember_%d" % f] = TileAtlas.LAYOUT["fire_ember_%d" % f]
 		fr["lick_%d" % f] = TileAtlas.LAYOUT["fire_lick_%d" % f]
 	_roles["fire"] = fr
+	for kind in ["water", "oil", "acid", "lava"]:
+		var lr := {}
+		for h in [2, 4, 6, 8]:
+			lr["lev_%d" % h] = TileAtlas.LAYOUT["%s_lev_%d" % [kind, h]]
+		for c in ["crest_2a", "crest_2b", "crest_4a", "crest_4b", "crest_6a", "crest_6b"]:
+			lr[c] = TileAtlas.LAYOUT["%s_%s" % [kind, c]]
+		for d in 4:
+			lr["rain_%d" % (d + 1)] = TileAtlas.LAYOUT["%s_rain_%d" % [kind, d + 1]]
+		_roles[kind] = lr
 
 ## Blit one atlas role onto the map at pixel (dx, dy) -- the atlas rect carries the tile or strip size.
 func _blit(kind: String, role: String, dx: int, dy: int) -> void:
 	var img: Image = _atlases.get(kind)
 	if img == null:
 		return
-	image.blit_rect(img, _roles[kind][role], Vector2i(dx, dy))
+	image.blend_rect(img, _roles[kind][role], Vector2i(dx, dy))
 
 ## Quarter-step density for a 0-8 row fill: 0 none, then 1-4 by twos.
 func _density(fill: int) -> int:
@@ -98,7 +106,6 @@ func _density(fill: int) -> int:
 
 ## Repaint the tick base and recapture the desires: ambiance and solid terrain only. The dynamic layers paint per frame over a copy of this. Call on every state change -- tick, stroke, restore, overlay toggle.
 func redraw() -> void:
-	liquids.capture()
 	fx.under(image)
 	for y in stone.height:
 		for x in stone.width:
@@ -110,15 +117,15 @@ func redraw() -> void:
 ## The frame pass: advance the pose on the render clock, restore the tick base, then paint the dynamic layers -- liquids from the pose, gas, soil, and fire from the packet -- then the FX over-pass and overlays. Call from the owning scene's _process.
 func frame() -> void:
 	var now := Time.get_ticks_msec()
+	@warning_ignore("unused_variable")
 	var dt := clampi(now - _frame_ms, 0, 250)
 	_frame_ms = now
-	liquids.advance(dt)
 	image.blit_rect(_base, Rect2i(0, 0, image.get_width(), image.get_height()), Vector2i.ZERO)
 	for y in stone.height:
 		for x in stone.width:
 			var px := x * TILE
 			var py := y * TILE
-			liquids.paint(image, x, y, px, py)
+			liquids.paint(x, y, px, py, _blit)
 			_draw_gas(x, y, px, py)
 			var n := stone.packet.get_sub(stone.idx(x, y), TilePacket.K_SOIL)
 			if n != 0:
