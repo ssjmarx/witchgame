@@ -33,7 +33,7 @@ var wave_left: PackedByteArray   # the special-draw bank -- view state, one byte
 var _bank_tick := -1   # the tick frontier -- the bank spends on sim ticks, never paints (the frame loop renders many times per tick)
 var _pin: PackedByteArray   # the pass-transient pin (one byte per column): 0 = none, else 1 + the KIND index of the animating surface above (wave, wave replay, or bottom-row crest) -- pins the single supported wet tile below to full rows; no chaining; needs the top-down pass (world §9)
 var _body: PackedByteArray   # the pass-transient body flag (one byte per column): did the tile above draw any liquid body (rows, waves, crests -- never droplets or waterfall fills)? A crest may only draw where this is clear -- the topmost tile of a body
-var ease_h: PackedByteArray   # the eased surface height per tile (lines 0-16 in bits 0-4, stepped-parity in bit 5, 255 = never drawn): the level draw may only move one sprite step (2 lines) per two ticks -- temporal quantization for the standing picture, the bank's gift extended to plain water (world §9)
+var ease_h: PackedByteArray   # the eased surface per tile (bits 0-2 the displayed sprite step 0-4, bits 3-5 the pending desired step, bits 6-7 the stability count, 255 = never drawn): the standing picture changes only after the desired step holds four ticks -- temporal quantization for plain water, the bank's gift extended past the specials (world §9)
 
 ## Bind the sim pair the renderer binds; the layer reads state, it never writes it. The wave bank rides along, zeroed at birth.
 func _init(terrain: GridStone, field: GridWater) -> void:
@@ -49,7 +49,7 @@ func _init(terrain: GridStone, field: GridWater) -> void:
 	ease_h.fill(255)
 
 
-## Paint one tile's liquid: resting bodies distribute their volume across the open subtile rows (per-cell compositing: solid cells draw nothing); falling streams draw the rain field, heavy columns the waterfall read (fill plus rain), fast lateral or diagonal flow the phase-hashed waves -- rapids outrank the waterfall read, and the special-draw bank guarantees every special picture plays at least one full animation cycle after its conditions cease (a class-latched byte of view state; the waterline returns only after a quiet cycle). The crestline is a banked class too: any partial surface row (including a brim-full surface cresting on its empty top row) latches CL_CREST and keeps rolling its four-tick grace after the waterline drops -- its step and row follow the live waterline while it qualifies, and it may only draw at the top of a body: liquid drawn above it in this pass disqualifies it, so one body carries exactly one crestline. The full-water override outranks every animation: a pinned tile, or a wave playing under real water, draws a solid column without touching the bank bytes. Actor claims factor the lines: the occupied tiles' drawn level reads liquid plus the claim's displaced volume -- the body's true local waterline, so she walks behind a solid curtain instead of transparency and rain. The standing surface eases: the drawn height chases its desired value one sprite step (2 lines) per two ticks (`ease_h`), so pins, overrides, and the pour sawtooth slide instead of snapping. Split tiles (diagonal pairs) render as their wet pocket alone unless both pockets are wet: no conduit pictures (waves, waterfall, pin, override) ever cross the pinch, and the level draws in the wet group's row only. The pin runs through here: an animating surface (a wave, a wave replay, or a bottom-row crest) pins the single supported wet tile below to full rows in the surface's kind -- no chaining, stone absorbs it, falling tiles never pin or receive -- so it needs the top-down pass order (redraw scans y ascending).
+## Paint one tile's liquid: resting bodies distribute their volume across the open subtile rows (per-cell compositing: solid cells draw nothing); falling streams draw the rain field, heavy columns the waterfall read (fill plus rain), fast lateral or diagonal flow the phase-hashed waves -- rapids outrank the waterfall read, and the special-draw bank guarantees every special picture plays at least one full animation cycle after its conditions cease (a class-latched byte of view state; the waterline returns only after a quiet cycle). The crestline is a banked class too: any partial surface row (including a brim-full surface cresting on its empty top row) latches CL_CREST and keeps rolling its four-tick grace after the waterline drops -- its step and row follow the live waterline while it qualifies, and it may only draw at the top of a body: liquid drawn above it in this pass disqualifies it, so one body carries exactly one crestline. The full-water override outranks every animation: a pinned tile, or a wave playing under real water, draws a solid column without touching the bank bytes. Actor claims factor the lines: the occupied tiles' drawn level reads liquid plus the claim's displaced volume -- the body's true local waterline, so she walks behind a solid curtain instead of transparency and rain. The standing surface eases: the desired height quantizes to a sprite step and the displayed step follows only after it holds stable four ticks (`ease_h`) -- a sawtooth across a quantization boundary never flashes the picture. Split tiles (diagonal pairs) render as their wet pocket alone unless both pockets are wet: no conduit pictures (waves, waterfall, pin, override) ever cross the pinch, and the level draws in the wet group's row only. The pin runs through here: an animating surface (a wave, a wave replay, or a bottom-row crest) pins the single supported wet tile below to full rows in the surface's kind -- no chaining, stone absorbs it, falling tiles never pin or receive -- so it needs the top-down pass order (redraw scans y ascending).
 func paint(x: int, y: int, px: int, py: int, blit: Callable) -> void:
 	var i := stone.idx(x, y)
 	if y == 0:
@@ -191,7 +191,7 @@ func paint(x: int, y: int, px: int, py: int, blit: Callable) -> void:
 	# the standing body: the open bottom row shares the volume, the remainder rides the top; the eased surface chases this desired height one sprite step per two ticks (the full-water override desires a solid column and eases to it instead of snapping)
 	var override := _pin[x] != 0 or (acl == CL_H and d_t > 0)
 	var desired_h := 16 if override else mini(d_b + d_t, 16)
-	var disp := _ease_step(i, desired_h)
+	var disp := _eased_lines(i, desired_h)
 	d_b = clampi(disp, 0, 8)
 	d_t = clampi(disp - 8, 0, 8)
 	if single_pocket:
@@ -338,21 +338,25 @@ func _below_full(b: int) -> bool:
 	return _liquid_total(b) + 64 * TilePacket.POPCOUNT[pk.occlusion_bits(b)] + TilePacket.SUB_DISPLACE * pk.get_actor_claim(b) >= 240
 
 
-## The eased surface height at tile i: one sprite step (2 lines) per two ticks toward the desired height, gated on tick parity like the bank's frontier; the sentinel snaps on first sight (a loaded scene must not fill its pools on camera), as does a gap of a full tile's worth (terrain edited under water).
-func _ease_step(i: int, desired: int) -> int:
+## The eased surface at tile i, as total lines (a sprite step x2): the desired height quantizes to a sprite step (0/2/4/6/8 lines) and the displayed step follows only after the desired holds stable four ticks -- a sawtooth across a quantization boundary never flips the picture (world §9). The sentinel snaps on first sight (a loaded scene must not fill its pools on camera), as does a gap of two steps or more (terrain edited under water).
+func _eased_lines(i: int, desired_h: int) -> int:
+	var want: int = clampi((desired_h + 1) >> 1, 0, 4)
 	var b := ease_h[i]
 	if b == 255:
-		ease_h[i] = desired
-		return desired
-	var disp := b & 31
-	if maxi(disp, desired) - mini(disp, desired) >= 16:
-		ease_h[i] = desired
-		return desired
-	var parity := (water.tick_count & 1) << 5
-	if (b & 32) != parity:
-		disp = mini(disp + 2, desired) if disp < desired else maxi(disp - 2, desired)
-		ease_h[i] = disp | parity
-	return disp
+		ease_h[i] = want | (want << 3)
+		return want * 2
+	var cur := b & 7
+	var pend := (b >> 3) & 7
+	var stable := (b >> 6) & 3
+	if pend != want:
+		pend = want
+		stable = 0
+	elif stable < 3:
+		stable += 1
+	if stable >= 3 and cur != pend:
+		cur = pend
+	ease_h[i] = cur | (pend << 3) | (stable << 6)
+	return cur * 2
 
 ## The kind for a draw: the dry-gap replay override while a banked picture plays out, else the live read.
 func _kind_now(i: int, liq: int) -> String:

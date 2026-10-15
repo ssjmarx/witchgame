@@ -53,6 +53,35 @@ func _init() -> void:
 		print("PASS: no leak subtile drew liquid at any sampled tick")
 	else:
 		print("FAIL: %d leak blits across samples" % fails)
+	# the flash hunt: tile (1,3) -- subtiles (2,6),(3,6) -- every blit with role and cell, two passes
+	print("--- flash hunt: tile (1,3) ---")
+	var pk3 := room.stone.packet
+	var watch: int = pk3.idx(1, 3)
+	var dv: bool = room.stone.drains_v(1, 3)
+	for pass_name in ["trickle", "no-feed"]:
+		room.restore(s)   # fresh census per pass
+		var rd2 := ElementRenderer.new(room.stone, room.water, 99)
+		print("[%s] drains_v(1,3)=%s" % [pass_name, dv])
+		for t in 300:
+			if pass_name == "trickle" and t % 3 == 0:
+				room.water.add_water(0, 2, 16)
+			room.sand.tick()
+			room.water.tick()
+			# paint the column top-down so pin/body state is real, then read the watched tile
+			var blits: Array[Vector2i] = []
+			var roles: Array[String] = []
+			var rec2 := func(kind: String, role: String, bx: int, by: int) -> void:
+				blits.append(Vector2i(bx, by))
+				roles.append(role)
+			for ty in [1, 2, 3]:
+				rd2.liquids.paint(1, ty, 16, ty * 16, rec2)
+			var liq13: int = room.water.get_water(1, 3)
+			if blits.size() > 0:
+				for bi in blits.size():
+					if blits[bi].y >= 48 and blits[bi].y < 64:   # inside tile (1,3)
+						print("t%d %s: %s @(%d,%d) liq13=%d bank=%d ease=%d" % [t, pass_name, roles[bi], blits[bi].x, blits[bi].y, liq13, rd2.liquids.wave_left[watch], rd2.liquids.ease_h[watch]])
+			elif t % 8 == 0:
+				print("t%d %s: (quiet) liq12=%d liq13=%d liq14=%d bank=%d ease=%d pin=%d" % [t, pass_name, room.water.get_water(1, 2), liq13, room.water.get_water(1, 4), rd2.liquids.wave_left[watch], rd2.liquids.ease_h[watch], rd2.liquids._pin[1]])
 	quit()
 
 ## One line per tile: occlusion pattern, so the pinch's tile alignment is readable.
