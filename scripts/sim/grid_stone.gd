@@ -76,13 +76,15 @@ func drains_v(x: int, y: int) -> bool:
 func drains_up(x: int, y: int) -> bool:
 	return _drains_vertical(x, y, false)
 
-## The shared vertical interior: the open-column test, then the wetability clause on the exit row (bottom when falling, top when rising) -- a blocked tile still passes through an open exit cell wetted from its exterior side (world §3).
+## The shared vertical interior: the open-column test, then the wetability clause on the exit row (bottom when falling, top when rising) -- a blocked tile still passes through an open exit cell wetted from its exterior side (world §3). Split tiles (diagonal pairs) never take the clause: their two open cells are distinct pockets, and the clause would drain one body through the other's notch.
 func _drains_vertical(x: int, y: int, down: bool) -> bool:
 	if not in_bounds(x, y) or packet.get_terrain(idx(x, y)) != TilePacket.T.AIR:
 		return false
 	var p := packet.occlusion_bits(idx(x, y))
 	if not TilePacket.BLOCKS_V[p]:
 		return true
+	if is_split(p):
+		return false
 	if down:
 		if (p & GridSand.BL) == 0 and _wet_side(x - 1, y, GridSand.BR):
 			return true
@@ -95,13 +97,15 @@ func _drains_vertical(x: int, y: int, down: bool) -> bool:
 			return true
 	return false
 
-## Interior test: may liquid inside (x, y) leave horizontally toward dx? An open through-row -- some top AND some bottom cell seals it (world §3). The wetability clause is directional: only the exit face's cells count (rightward reads TR/BR, leftward TL/BL), each wetted from the exterior tile past it (TR/TL from above, BR/BL from below). Fixtures and the boundary never drain.
+## Interior test: may liquid inside (x, y) leave horizontally toward dx? An open through-row -- some top AND some bottom cell seals it (world §3). The wetability clause is directional: only the exit face's cells count (rightward reads TR/BR, leftward TL/BL), each wetted from the exterior tile past it (TR/TL from above, BR/BL from below). Split tiles (diagonal pairs) never take the clause, same as the vertical read. Fixtures and the boundary never drain.
 func drains_h(x: int, y: int, dx: int) -> bool:
 	if not in_bounds(x, y) or packet.get_terrain(idx(x, y)) != TilePacket.T.AIR:
 		return false
 	var p := packet.occlusion_bits(idx(x, y))
 	if not TilePacket.BLOCKS_H[p]:
 		return true
+	if is_split(p):
+		return false
 	if dx > 0:
 		if (p & GridSand.TR) == 0 and _wet_side(x, y - 1, GridSand.BR):
 			return true
@@ -122,6 +126,10 @@ func _wet_side(x: int, y: int, cell: int) -> bool:
 	if (packet.occlusion_bits(i) & cell) != 0:
 		return false
 	return packet.pool_total(i) - packet.get_pool(i, TilePacket.Mat.SMOKE) - packet.get_pool(i, TilePacket.Mat.STEAM) > 0
+
+## The tile's open cells split into two diagonal pockets (TL+BR or TR+BL, the only disconnected open shapes) -- two bodies may live in one tile: the wetability clause never bridges them, and seek never runs through them (the pinch-separation ruling, world §3).
+func is_split(p: int) -> bool:
+	return p == (GridSand.TL | GridSand.BR) or p == (GridSand.TR | GridSand.BL)
 
 ## Is corner cell c of (x, y) reachable through the tile's interior? The cell must be open and share a fully open row or column with a partner -- a diagonal pair's open cells never connect, so its corners are unreachable (world §3). Fixtures never reach.
 func _corner_reachable(x: int, y: int, c: int) -> bool:

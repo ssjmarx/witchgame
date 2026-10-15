@@ -92,7 +92,7 @@ func _clear_world() -> void:
 	rooms[observed].reset()
 	mirrors[observed].sync()
 
-## Scene keys: F1-F4 observe a room, Ctrl+F1-F4 snapshot into that slot (a crossed save copies live), N spawns a witch at hover, BACKSPACE despawns the oldest, I ignites at hover, P pauses (Space is the witches').
+## Scene keys: F1-F4 observe a room, Ctrl+F1-F4 snapshot into that slot (a crossed save copies live), S saves the observed room into its own slot (the WM often eats Ctrl+F-keys), N spawns a witch at hover, BACKSPACE despawns the oldest, I ignites at hover, P pauses (Space is the witches').
 func _handle_key(k: int) -> bool:
 	match k:
 		KEY_F1, KEY_F2, KEY_F3, KEY_F4:
@@ -101,6 +101,9 @@ func _handle_key(k: int) -> bool:
 				_save_slot(slot)
 			else:
 				_observe(slot)
+			return true
+		KEY_S:
+			_save_slot(observed)
 			return true
 		KEY_N:
 			var t := _hover_tile()
@@ -276,14 +279,17 @@ func _load_slots() -> void:
 		else:
 			_carve_preset(rooms[k].stone, rooms[k].water, rows, rooms[k].sand.structures)
 
-## Snapshot the observed room into slot k's file as an opaque census blob (the level format keeps its own lab); a crossed save also restores it into room k, live. Version 4: the cleanup cut's sixteen columns.
+## Snapshot the observed room into slot k's file as an opaque census blob (the level format keeps its own lab); a crossed save also restores it into room k, live. Version 4: the cleanup cut's sixteen columns. Loud: the write's outcome prints to the log with the global path -- silent saves hid a broken Ctrl+F for a session.
 func _save_slot(k: int) -> void:
 	var s := rooms[observed].snapshot()
-	var f := FileAccess.open(SLOT_PATH % k, FileAccess.WRITE)
+	var path := SLOT_PATH % k
+	var f := FileAccess.open(path, FileAccess.WRITE)
 	if f == null:
+		print("SAVE FAILED: slot %d, could not open %s" % [k, ProjectSettings.globalize_path(path)])
 		return
 	f.store_var({"v": 4, "cols": s.cols, "ign": s.ignition, "wb": s.woodburn, "wt": s.water_ticks, "st": s.sand_ticks})
 	f.close()
+	print("SAVED room %d -> slot %d (%s)" % [observed, k, ProjectSettings.globalize_path(path)])
 	if k != observed:
 		rooms[k].restore(s)
 

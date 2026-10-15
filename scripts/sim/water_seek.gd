@@ -24,12 +24,13 @@ func _init(w: int, h: int, terrain: GridStone, p_pools: WaterPools, p_flow: Wate
 	pools = p_pools
 	flow = p_flow
 
-## Rule four: try to equalize pressure across each run of liquid tiles (any material — mixtures are one conduit) for material m. A run splits at a sealed edge or a pinched tile -- the conduit never spans matter the liquid could not flow through (world §3).
+## Rule four: try to equalize pressure across each run of liquid tiles (any material — mixtures are one conduit) for material m. A run splits at a sealed edge or a pinched tile -- the conduit never spans matter the liquid could not flow through (world §3). Split tiles (diagonal pairs) never join a run at all: their two pockets may belong to two distinct bodies, and a conduit through the mixed pool would link them (the pinch-separation ruling).
 func pass_all(m: int) -> void:
 	for y in range(height - 1, -1, -1):
 		var x := 0
 		while x < width:
-			if pk.pool_total(pk.idx(x, y)) >= GridWater.LINE:
+			if pk.pool_total(pk.idx(x, y)) >= GridWater.LINE \
+					and not stone.is_split(pk.occlusion_bits(pk.idx(x, y))):
 				var x1 := x
 				while x1 + 1 < width and pk.pool_total(pk.idx(x1 + 1, y)) >= GridWater.LINE \
 						and stone.edge_h_open(x1 + 1, y) \

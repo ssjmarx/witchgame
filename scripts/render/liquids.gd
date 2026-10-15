@@ -33,6 +33,7 @@ var wave_left: PackedByteArray   # the special-draw bank -- view state, one byte
 var _bank_tick := -1   # the tick frontier -- the bank spends on sim ticks, never paints (the frame loop renders many times per tick)
 var _pin: PackedByteArray   # the pass-transient pin (one byte per column): 0 = none, else 1 + the KIND index of the animating surface above (wave, wave replay, or bottom-row crest) -- pins the single supported wet tile below to full rows; no chaining; needs the top-down pass (world §9)
 var _body: PackedByteArray   # the pass-transient body flag (one byte per column): did the tile above draw any liquid body (rows, waves, crests -- never droplets or waterfall fills)? A crest may only draw where this is clear -- the topmost tile of a body
+var ease_h: PackedByteArray   # the eased surface height per tile (lines 0-16 in bits 0-4, stepped-parity in bit 5, 255 = never drawn): the level draw may only move one sprite step (2 lines) per two ticks -- temporal quantization for the standing picture, the bank's gift extended to plain water (world §9)
 
 ## Bind the sim pair the renderer binds; the layer reads state, it never writes it. The wave bank rides along, zeroed at birth.
 func _init(terrain: GridStone, field: GridWater) -> void:
@@ -44,9 +45,11 @@ func _init(terrain: GridStone, field: GridWater) -> void:
 	wave_kind.fill(255)
 	_pin.resize(terrain.width)
 	_body.resize(terrain.width)
+	ease_h.resize(terrain.width * terrain.height)
+	ease_h.fill(255)
 
 
-## Paint one tile's liquid: resting bodies distribute their volume across the open subtile rows (per-cell compositing: solid cells draw nothing); falling streams draw the rain field, heavy columns the waterfall read (fill plus rain), fast lateral or diagonal flow the phase-hashed waves -- rapids outrank the waterfall read, and the special-draw bank guarantees every special picture plays at least one full animation cycle after its conditions cease (a class-latched byte of view state; the waterline returns only after a quiet cycle). The crestline is a banked class too: any partial surface row (including a brim-full surface cresting on its empty top row) latches CL_CREST and keeps rolling its four-tick grace after the waterline drops -- its step and row follow the live waterline while it qualifies, and it may only draw at the top of a body: liquid drawn above it in this pass disqualifies it, so one body carries exactly one crestline. The full-water override outranks every animation: a pinned tile, or a wave playing under real water, draws a solid column without touching the bank bytes. Actor claims factor the lines: the occupied tiles' drawn level reads liquid plus the claim's displaced volume -- the body's true local waterline, so she walks behind a solid curtain instead of transparency and rain. The pin runs through here: an animating surface (a wave, a wave replay, or a bottom-row crest) pins the single supported wet tile below to full rows in the surface's kind -- no chaining, stone absorbs it, falling tiles never pin or receive -- so it needs the top-down pass order (redraw scans y ascending).
+## Paint one tile's liquid: resting bodies distribute their volume across the open subtile rows (per-cell compositing: solid cells draw nothing); falling streams draw the rain field, heavy columns the waterfall read (fill plus rain), fast lateral or diagonal flow the phase-hashed waves -- rapids outrank the waterfall read, and the special-draw bank guarantees every special picture plays at least one full animation cycle after its conditions cease (a class-latched byte of view state; the waterline returns only after a quiet cycle). The crestline is a banked class too: any partial surface row (including a brim-full surface cresting on its empty top row) latches CL_CREST and keeps rolling its four-tick grace after the waterline drops -- its step and row follow the live waterline while it qualifies, and it may only draw at the top of a body: liquid drawn above it in this pass disqualifies it, so one body carries exactly one crestline. The full-water override outranks every animation: a pinned tile, or a wave playing under real water, draws a solid column without touching the bank bytes. Actor claims factor the lines: the occupied tiles' drawn level reads liquid plus the claim's displaced volume -- the body's true local waterline, so she walks behind a solid curtain instead of transparency and rain. The standing surface eases: the drawn height chases its desired value one sprite step (2 lines) per two ticks (`ease_h`), so pins, overrides, and the pour sawtooth slide instead of snapping. Split tiles (diagonal pairs) render as their wet pocket alone unless both pockets are wet: no conduit pictures (waves, waterfall, pin, override) ever cross the pinch, and the level draws in the wet group's row only. The pin runs through here: an animating surface (a wave, a wave replay, or a bottom-row crest) pins the single supported wet tile below to full rows in the surface's kind -- no chaining, stone absorbs it, falling tiles never pin or receive -- so it needs the top-down pass order (redraw scans y ascending).
 func paint(x: int, y: int, px: int, py: int, blit: Callable) -> void:
 	var i := stone.idx(x, y)
 	if y == 0:
@@ -64,6 +67,7 @@ func paint(x: int, y: int, px: int, py: int, blit: Callable) -> void:
 	if liq <= 0:
 		# a dry tile draws nothing of live water (a flow stamp with no liquid beneath it is gas in transit -- rain is never made of gas), but a banked picture replays: the holdover guarantee covers the dry gaps of a transit tile (world §9)
 		_pin[x] = 0   # a dry tile is never pinned -- the pin asks for liquid subtiles, not water hanging in a gap
+		var body_above := _body[x]   # read before the clear -- a holdover crest yields its grace to liquid drawn above
 		_body[x] = 0   # a dry tile is no body either -- unless a holdover picture draws one below
 		if (wave_left[i] & 31) > 0:
 			_ctx_kind = wave_kind[i] & 3
@@ -88,14 +92,19 @@ func paint(x: int, y: int, px: int, py: int, blit: Callable) -> void:
 					_body[x] = 0   # droplets are no body either
 				CL_CREST:
 					# the holdover crestline rolls out its grace over the gap -- a receding body keeps its crest after the waterline drops
-					var gv := (water.tick_count >> 3) & 1
-					var crole := "crest_%d%s" % [(((wave_kind[i] >> 5) & 3) * 2) + 2, "a" if gv == 0 else "b"]
-					if (wave_kind[i] & 16) != 0:
-						_blit_role_row(blit, KIND[_ctx_kind], crole, pattern, px, py, TOP_MASK)
+					if body_above != 0:
+						# liquid drawn above ends the grace -- the crest handed up to the new surface (world §9)
+						wave_left[i] = 0
+						wave_kind[i] = 255
 					else:
-						_blit_role_row(blit, KIND[_ctx_kind], crole, pattern, px, py + 8, BOTTOM_MASK)
-					_pin[x] = 0   # a grace crest over a dry gap pins nothing
-					_body[x] = 1   # the grace crest is the body's last surface -- it is body
+						var gv := (water.tick_count >> 3) & 1
+						var crole := "crest_%d%s" % [(((wave_kind[i] >> 5) & 3) * 2) + 2, "a" if gv == 0 else "b"]
+						if (wave_kind[i] & 16) != 0:
+							_blit_role_row(blit, KIND[_ctx_kind], crole, pattern, px, py, TOP_MASK)
+						else:
+							_blit_role_row(blit, KIND[_ctx_kind], crole, pattern, px, py + 8, BOTTOM_MASK)
+						_pin[x] = 0   # a grace crest over a dry gap pins nothing
+						_body[x] = 1   # the grace crest is the body's last surface -- it is body
 			_ctx_kind = -1
 		return
 	var mag := water.get_flow_mag(x, y)
@@ -123,6 +132,28 @@ func paint(x: int, y: int, px: int, py: int, blit: Callable) -> void:
 		# the banked picture's context rides only the fresh latch (kind 0-1, heavy 2, full 3, top-row mode 4) -- a live wave keeps the geometry it was born with, class and shape both
 		if (prev & 31) == 0 or (prev >> 5) != desired:
 			wave_kind[i] = (_band_top(i, liq) & 3) | (4 if liq >= 64 else 0) | (8 if liq >= 128 else 0) | (16 if not supported and liq >= 128 else 0)
+	# split tiles (diagonal pairs) hold two pockets: when not both pockets are wet, the tile renders as the wet pocket alone -- no wave/waterfall specials, no pin, no override column, the conduit pictures never cross the pinch (world §3)
+	var split := stone.is_split(pattern)
+	var upper_wet := false
+	var lower_wet := false
+	var single_pocket := false
+	if split:
+		upper_wet = y > 0 and _liquid_total(i - stone.width) > 0
+		lower_wet = y < stone.height - 1 and _liquid_total(i + stone.width) > 0
+		if pattern == (GridSand.TL | GridSand.BR):   # the TR pocket drinks from above and the right; the BL pocket from below and the left
+			if x < stone.width - 1 and _liquid_total(i + 1) > 0:
+				upper_wet = true
+			if x > 0 and _liquid_total(i - 1) > 0:
+				lower_wet = true
+		else:                                        # the TL pocket drinks from above and the left; the BR pocket from below and the right
+			if x > 0 and _liquid_total(i - 1) > 0:
+				upper_wet = true
+			if x < stone.width - 1 and _liquid_total(i + 1) > 0:
+				lower_wet = true
+		single_pocket = not (upper_wet and lower_wet)
+		if single_pocket:
+			acl = CL_NONE   # the pockets are distinct bodies -- conduit pictures never draw across the pinch; the bank bytes stay untouched
+			_pin[x] = 0
 	if not supported:
 		match acl:
 			CL_H:
@@ -157,10 +188,23 @@ func paint(x: int, y: int, px: int, py: int, blit: Callable) -> void:
 	var rem := maxi(liq_draw - 64 * open_b, 0)
 	@warning_ignore("integer_division")
 	var d_t := clampi(rem / maxi(8 * open_t, 8), 0, 8)
-	# the full-water override outranks any playing animation: pinned, or a wave playing under real water -- solid column, bank bytes untouched
-	if _pin[x] != 0 or (acl == CL_H and d_t > 0):
-		_blit_cells(blit, kind, pattern, px, py + 8, 8, false, 0, BOTTOM_MASK)
-		_blit_cells(blit, kind, pattern, px, py, 8, false, 0, TOP_MASK)
+	# the standing body: the open bottom row shares the volume, the remainder rides the top; the eased surface chases this desired height one sprite step per two ticks (the full-water override desires a solid column and eases to it instead of snapping)
+	var override := _pin[x] != 0 or (acl == CL_H and d_t > 0)
+	var desired_h := 16 if override else mini(d_b + d_t, 16)
+	var disp := _ease_step(i, desired_h)
+	d_b = clampi(disp, 0, 8)
+	d_t = clampi(disp - 8, 0, 8)
+	if single_pocket:
+		# the wet pocket owns the lines: upper pockets draw in the top row, lower pockets in the bottom -- the dry pocket never draws
+		if upper_wet:
+			d_t = clampi(disp, 0, 8)
+			d_b = 0
+		else:
+			d_b = clampi(disp, 0, 8)
+			d_t = 0
+	if override:
+		_blit_cells(blit, kind, pattern, px, py + 8, d_b, false, 0, BOTTOM_MASK)
+		_blit_cells(blit, kind, pattern, px, py, d_t, false, 0, TOP_MASK)
 		_body[x] = 1   # full body
 		return   # full body is not a surface -- it pins nothing
 	if acl == CL_DL or acl == CL_DR:
@@ -202,6 +246,11 @@ func paint(x: int, y: int, px: int, py: int, blit: Callable) -> void:
 		# the crest's existence is banked, not its shape -- step and row follow the live waterline every qualifying tick (bits: kind 0-1, top row 4, step index 5-6)
 		wave_kind[i] = (_band_top(i, liq) & 3) | (16 if crest_top else 0) | (crest_step << 5)
 	_pin[x] = 0
+	if acl == CL_CREST and not crest_qualifies and _body[x] != 0:
+		# liquid drawn above ends the grace immediately -- a rising waterline hands the crest up to the new surface instead of stacking two lines
+		wave_left[i] = 0
+		wave_kind[i] = 255
+		acl = CL_NONE
 	if acl == CL_CREST:
 		# the banked crest owns the surface row -- live step while it qualifies, banked step through the grace; the body rows draw flat beneath it
 		var crest_kind := KIND[wave_kind[i] & 3]
@@ -287,6 +336,23 @@ func _raining_above(x: int, y: int, kind: String) -> int:
 ## The subtile-aware full read: the tile cannot accept one more LINE of liquid -- its pool total plus its solid subtiles' and actor claims' volume crosses the 240 line (a stone shelf or a standing body raises the waterline's full mark with it) (world §9).
 func _below_full(b: int) -> bool:
 	return _liquid_total(b) + 64 * TilePacket.POPCOUNT[pk.occlusion_bits(b)] + TilePacket.SUB_DISPLACE * pk.get_actor_claim(b) >= 240
+
+
+## The eased surface height at tile i: one sprite step (2 lines) per two ticks toward the desired height, gated on tick parity like the bank's frontier; the sentinel snaps on first sight (a loaded scene must not fill its pools on camera), as does a gap of a full tile's worth (terrain edited under water).
+func _ease_step(i: int, desired: int) -> int:
+	var b := ease_h[i]
+	if b == 255:
+		ease_h[i] = desired
+		return desired
+	var disp := b & 31
+	if maxi(disp, desired) - mini(disp, desired) >= 16:
+		ease_h[i] = desired
+		return desired
+	var parity := (water.tick_count & 1) << 5
+	if (b & 32) != parity:
+		disp = mini(disp + 2, desired) if disp < desired else maxi(disp - 2, desired)
+		ease_h[i] = disp | parity
+	return disp
 
 ## The kind for a draw: the dry-gap replay override while a banked picture plays out, else the live read.
 func _kind_now(i: int, liq: int) -> String:
